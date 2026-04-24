@@ -140,6 +140,8 @@ cd /opt/domen-hydra && git pull && systemctl restart hydra-manager
 
 [Boosty — донат](https://boosty.to/andrey27/donate). На GitHub доступна кнопка **Sponsor** (`.github/FUNDING.yml`).
 
+**Связь:** [Telegram @Iot_andrey](https://t.me/Iot_andrey) — вопросы и обратная связь.
+
 ---
 
 ## Связь с Keenetic Unified
