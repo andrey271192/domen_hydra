@@ -132,3 +132,6 @@ cd /opt/domen-hydra && git pull && systemctl restart hydra-manager
 ## Связь с Keenetic Unified
 
 Логика парсинга `domain.conf` / `ip.list` и веб-интерфейс доменов взяты из проекта [keenetic-unified](https://github.com/andrey271192/keenetic-unified) в урезанном виде: только управление HydraRoute, без дашборда, watchdog и Telegram.
+
+поддержать автора 
+https://boosty.to/andrey27/donate
