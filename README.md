@@ -121,6 +121,7 @@ server/
 
 docs/
   preview.png      — превью интерфейса
+  donation_qr.png  — QR перевода в Т-Банк (поддержка)
 
 install_router.sh  — установка на роутер
 hydra_update.sh    — скачивание конфига с сервера
@@ -138,7 +139,12 @@ cd /opt/domen-hydra && git pull && systemctl restart hydra-manager
 
 ## Поддержка проекта
 
-[Boosty — донат](https://boosty.to/andrey27/donate). На GitHub доступна кнопка **Sponsor** (`.github/FUNDING.yml`).
+- [Boosty — донат](https://boosty.to/andrey27/donate)
+- Перевод в **Т-Банк**: [страница перевода](https://www.tinkoff.ru/rm/r_avmEGQKPOg.NbQhLsnBth/YW9h150011)
+
+![QR-код — перевод в Т-Банк](docs/donation_qr.png)
+
+На GitHub доступна кнопка **Sponsor** (`.github/FUNDING.yml`).
 
 **Связь:** [Telegram @Iot_andrey](https://t.me/Iot_andrey) — вопросы и обратная связь.
 
