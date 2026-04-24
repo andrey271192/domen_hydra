@@ -1,0 +1,365 @@
+<!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>HydraRoute Manager</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#000;--card:#1c1c1e;--card2:#2c2c2e;--card3:#3a3a3c;--border:#38383a;--text:#f5f5f7;--muted:#86868b;--accent:#0a84ff;--green:#30d158;--red:#ff453a;--yellow:#ffd60a;--orange:#ff9f0a}
+body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display',sans-serif;background:var(--bg);color:var(--text);padding:20px 24px;max-width:1200px;margin:0 auto}
+h1{font-size:22px;font-weight:700;margin-bottom:4px}
+.sub{color:var(--muted);font-size:13px;margin-bottom:20px}
+.topbar{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:20px;margin-top:12px}
+.topbar-btns{display:flex;gap:8px;flex-wrap:wrap}
+.tabs{display:flex;gap:8px;margin-bottom:20px}
+.tab{padding:8px 18px;border-radius:10px;border:none;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;background:var(--card);color:var(--muted)}
+.tab.active{background:var(--accent);color:#fff}
+.section{background:var(--card);border-radius:16px;padding:18px 20px;margin-bottom:16px}
+.section-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+.section-head h2{font-size:14px;font-weight:700;display:flex;align-items:center;gap:8px}
+.groups-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:10px}
+.group{background:var(--card2);border-radius:12px;padding:0;overflow:hidden;transition:box-shadow .2s}
+.group.editing{box-shadow:0 0 0 2px var(--accent)}
+.group-head{display:flex;justify-content:space-between;align-items:center;padding:12px 14px 8px}
+.group-name{font-weight:700;font-size:13px}
+.group-actions{display:flex;gap:4px}
+.icon-btn{background:none;border:none;cursor:pointer;font-size:14px;padding:2px 6px;border-radius:6px;color:var(--muted)}
+.icon-btn:hover{background:var(--card3);color:var(--text)}
+.badge{font-size:11px;padding:2px 8px;border-radius:6px;font-weight:600;white-space:nowrap}
+.p-HydraRoute,.p-amnezia{background:rgba(10,132,255,.15);color:var(--accent)}
+.p-RU{background:rgba(255,214,10,.15);color:var(--yellow)}
+.p-Google{background:rgba(48,209,88,.15);color:var(--green)}
+.p-default{background:rgba(255,159,10,.15);color:var(--orange)}
+.group-view{padding:0 14px 12px}
+.entries-list{font-size:11px;color:var(--muted);line-height:1.7;max-height:90px;overflow-y:auto;font-family:monospace}
+.group-meta{font-size:11px;color:var(--border);margin-top:6px}
+.group-edit{padding:10px 14px 14px;display:none;border-top:1px solid var(--border)}
+.group-edit.open{display:block}
+.edit-label{font-size:11px;color:var(--muted);margin-bottom:4px;font-weight:600}
+textarea.entries-ta{width:100%;min-height:120px;background:var(--card3);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--text);font-size:11px;font-family:monospace;outline:none;resize:vertical}
+textarea.entries-ta:focus{border-color:var(--accent)}
+.add-quick{display:flex;gap:6px;margin-top:8px}
+input.quick-input{background:var(--card3);border:1px solid var(--border);border-radius:8px;padding:7px 10px;color:var(--text);font-size:12px;font-family:monospace;outline:none;flex:1}
+input.quick-input:focus{border-color:var(--accent)}
+input.quick-input::placeholder{color:var(--muted)}
+.edit-footer{display:flex;justify-content:space-between;align-items:center;margin-top:10px;gap:8px}
+.edit-footer-left{display:flex;gap:6px}
+.btn{padding:8px 16px;border-radius:8px;border:none;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap}
+.btn-b{background:var(--accent);color:#fff}.btn-r{background:var(--red);color:#fff}.btn-g{background:var(--green);color:#000}.btn-o{background:var(--orange);color:#000}
+.btn-ghost{background:var(--card2);color:var(--muted)}.btn-ghost:hover{background:var(--card3)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.new-group-form{background:var(--card2);border-radius:12px;padding:14px;border:1px dashed var(--border);display:none}
+.new-group-form.open{display:block}
+.form-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+input.f-inp,select.f-sel{background:var(--card3);border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:var(--text);font-size:12px;font-family:inherit;outline:none}
+input.f-inp:focus,select.f-sel:focus{border-color:var(--accent)}
+.msg{padding:7px 12px;border-radius:8px;font-size:12px;font-weight:600;margin-top:6px;display:none}
+.msg.ok{display:block;background:rgba(48,209,88,.1);color:var(--green)}
+.msg.err{display:block;background:rgba(255,69,58,.1);color:var(--red)}
+.push-log{background:#111;border-radius:10px;padding:12px;font-size:11px;font-family:monospace;color:var(--muted);max-height:120px;overflow-y:auto;margin-top:10px;display:none}
+.pending-banner{background:rgba(255,159,10,.12);border:1px solid rgba(255,159,10,.4);border-radius:12px;padding:12px 16px;display:none;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px}
+.pending-banner span{font-size:13px;color:var(--orange);font-weight:600}
+.hdr{padding:0 24px;height:54px;background:rgba(28,28,30,.95);backdrop-filter:blur(20px);border-bottom:1px solid rgba(255,255,255,.08);position:sticky;top:0;z-index:100;display:flex;align-items:center;justify-content:space-between;gap:16px;margin:-20px -24px 20px}
+.hdr-logo{font-size:17px;font-weight:800;white-space:nowrap}.hdr-logo em{font-style:normal;color:var(--accent)}
+.logout-btn{background:transparent;border:1px solid var(--border);color:var(--muted);border-radius:20px;padding:5px 14px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;flex-shrink:0}
+.imp-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:600px){.imp-grid{grid-template-columns:1fr}.groups-grid{grid-template-columns:1fr}}
+textarea.imp-ta{width:100%;min-height:200px;background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:12px;color:var(--text);font-size:11px;font-family:monospace;outline:none;resize:vertical}
+textarea.imp-ta:focus{border-color:var(--accent)}
+.spinner{display:inline-block;width:12px;height:12px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite;vertical-align:middle;margin-right:5px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.version{font-size:11px;color:var(--muted);font-family:monospace}
+.toggle{width:34px;height:20px;background:var(--border);border-radius:10px;position:relative;cursor:pointer;border:none;transition:.2s}
+.toggle.on{background:var(--green)}.toggle::after{content:'';position:absolute;width:16px;height:16px;background:#fff;border-radius:50%;top:2px;left:2px;transition:.2s}
+.toggle.on::after{left:16px}
+input[type=text],input[type=password]{background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:9px 14px;color:var(--text);font-size:13px;font-family:inherit;outline:none}
+input[type=text]:focus,input[type=password]:focus{border-color:var(--accent)}
+.ri{padding:10px 0;border-bottom:1px solid rgba(255,255,255,.05);font-size:13px;display:flex;justify-content:space-between;align-items:center;font-weight:500}
+.ri:last-child{border:none}.ri .n{font-weight:700;color:var(--accent)}
+</style></head><body>
+
+<!-- AUTH OVERLAY -->
+<div id="auth-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.97);z-index:9999;align-items:center;justify-content:center">
+  <div style="background:#1c1c1e;border-radius:24px;padding:40px 36px;width:min(360px,90vw);text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.8)">
+    <div style="font-size:44px;margin-bottom:14px">🌐</div>
+    <h2 style="font-size:20px;font-weight:700;color:#f5f5f7;margin-bottom:6px">HydraRoute Manager</h2>
+    <p style="font-size:13px;color:#86868b;margin-bottom:22px">Введите пароль для доступа</p>
+    <input id="auth-pwd" type="password" placeholder="Пароль" autocomplete="current-password"
+      style="width:100%;background:#2c2c2e;border:1px solid #38383a;border-radius:12px;padding:12px 16px;color:#f5f5f7;font-size:15px;outline:none;font-family:inherit;margin-bottom:8px;box-sizing:border-box"
+      onkeydown="if(event.key==='Enter')_doLogin()">
+    <div id="auth-err" style="color:#ff453a;font-size:12px;font-weight:600;margin-bottom:8px;display:none">❌ Неверный пароль</div>
+    <button onclick="_doLogin()" id="auth-btn" style="width:100%;background:#0a84ff;color:#fff;border:none;border-radius:12px;padding:13px;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Войти</button>
+  </div>
+</div>
+
+<!-- NAV -->
+<div class="hdr">
+  <span class="hdr-logo">🌐 <em>HydraRoute</em> Manager</span>
+  <button class="logout-btn" onclick="logout()">Выйти</button>
+</div>
+
+<div class="topbar">
+  <div>
+    <h1>🌐 Управление доменами</h1>
+    <div class="sub">HydraRoute Neo · <span id="ver" class="version">...</span></div>
+  </div>
+  <div class="topbar-btns">
+    <button class="btn btn-b" onclick="pushAll()" id="push-btn">📡 Обновить все роутеры</button>
+    <a href="/hydra/domain.conf" target="_blank" class="btn btn-ghost" style="text-decoration:none">↓ domain.conf</a>
+    <a href="/hydra/ip.list" target="_blank" class="btn btn-ghost" style="text-decoration:none">↓ ip.list</a>
+  </div>
+</div>
+<div id="pending-banner" class="pending-banner">
+  <span>⚠️ Есть несохранённые изменения — роутеры ещё не обновлены</span>
+  <button class="btn btn-o" onclick="pushAll()">📡 Отправить сейчас</button>
+</div>
+<div id="push-log" class="push-log"></div>
+
+<div class="tabs">
+  <button class="tab active" onclick="showTab('view')">📋 Конфигурация</button>
+  <button class="tab" onclick="showTab('import')">⬆ Импорт файлов</button>
+  <button class="tab" onclick="showTab('routers')">🔧 Роутеры</button>
+  <button class="tab" onclick="showTab('settings')">⚙ Настройки</button>
+</div>
+
+<!-- CONFIGURATION TAB -->
+<div id="tab-view">
+  <div class="section">
+    <div class="section-head">
+      <h2>📄 Группы доменов <span id="dg-count" class="badge p-HydraRoute">0</span></h2>
+      <button class="btn btn-b" onclick="toggleNewGroup('domain')" style="font-size:12px">+ Новая группа</button>
+    </div>
+    <div id="new-domain-form" class="new-group-form" style="margin-bottom:12px">
+      <div class="form-row">
+        <input class="f-inp" id="nd-name" placeholder="Имя группы" style="width:140px">
+        <select class="f-sel" id="nd-policy"><option>HydraRoute</option><option>RU</option><option>Google</option><option>amnezia</option></select>
+        <select class="f-sel" id="nd-type"><option value="domain">domain</option><option value="geosite">geosite</option></select>
+      </div>
+      <textarea class="entries-ta" id="nd-entries" placeholder="Одна запись на строку:&#10;youtube.com&#10;netflix.com" style="min-height:80px"></textarea>
+      <div style="margin-top:8px;display:flex;gap:6px">
+        <button class="btn btn-g" onclick="saveNewGroup('domain')">✅ Создать</button>
+        <button class="btn btn-ghost" onclick="toggleNewGroup('domain')">Отмена</button>
+      </div>
+    </div>
+    <div id="domain-groups" class="groups-grid"></div>
+  </div>
+  <div class="section">
+    <div class="section-head">
+      <h2>🔢 Группы IP <span id="ig-count" class="badge p-RU">0</span></h2>
+      <button class="btn btn-b" onclick="toggleNewGroup('ip')" style="font-size:12px">+ Новая группа</button>
+    </div>
+    <div id="new-ip-form" class="new-group-form" style="margin-bottom:12px">
+      <div class="form-row">
+        <input class="f-inp" id="ni-name" placeholder="Имя группы" style="width:140px">
+        <select class="f-sel" id="ni-policy"><option>HydraRoute</option><option>RU</option><option>Google</option><option>amnezia</option></select>
+        <select class="f-sel" id="ni-type"><option value="ip">ip</option><option value="geoip">geoip</option></select>
+      </div>
+      <textarea class="entries-ta" id="ni-entries" placeholder="1.2.3.0/24&#10;geoip:ru" style="min-height:80px"></textarea>
+      <div style="margin-top:8px;display:flex;gap:6px">
+        <button class="btn btn-g" onclick="saveNewGroup('ip')">✅ Создать</button>
+        <button class="btn btn-ghost" onclick="toggleNewGroup('ip')">Отмена</button>
+      </div>
+    </div>
+    <div id="ip-groups" class="groups-grid"></div>
+  </div>
+  <div id="view-msg" class="msg"></div>
+</div>
+
+<!-- IMPORT TAB -->
+<div id="tab-import" style="display:none">
+  <div class="section">
+    <div class="section-head"><h2>⬆ Импорт domain.conf + ip.list</h2></div>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Вставь содержимое файлов с роутера — формат сохраняется 1:1</p>
+    <div class="imp-grid">
+      <div>
+        <div style="font-size:12px;font-weight:700;margin-bottom:6px;color:var(--accent)">domain.conf</div>
+        <textarea class="imp-ta" id="dc-text" placeholder="##groupname&#10;domain1.com,domain2.com/PolicyName"></textarea>
+      </div>
+      <div>
+        <div style="font-size:12px;font-weight:700;margin-bottom:6px;color:var(--green)">ip.list</div>
+        <textarea class="imp-ta" id="il-text" placeholder="##groupname&#10;/PolicyName&#10;1.2.3.0/24"></textarea>
+      </div>
+    </div>
+    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-b" onclick="importFiles()">💾 Сохранить на сервер</button>
+      <button class="btn btn-g" onclick="importAndPush()">💾📡 Сохранить + обновить все роутеры</button>
+    </div>
+    <div id="im" class="msg"></div>
+  </div>
+  <div class="section">
+    <div class="section-head"><h2>📤 Текущая конфигурация (для копирования)</h2></div>
+    <div class="imp-grid">
+      <div>
+        <div style="font-size:12px;font-weight:700;margin-bottom:6px;color:var(--accent)">domain.conf</div>
+        <textarea class="imp-ta" id="dc-export" readonly></textarea>
+      </div>
+      <div>
+        <div style="font-size:12px;font-weight:700;margin-bottom:6px;color:var(--green)">ip.list</div>
+        <textarea class="imp-ta" id="il-export" readonly></textarea>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ROUTERS TAB -->
+<div id="tab-routers" style="display:none">
+  <div class="section">
+    <h2 style="font-size:14px;font-weight:700;margin-bottom:14px">➕ Добавить роутер</h2>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+      <input type="text" id="r-name" placeholder="Имя (andrey)" style="width:130px">
+      <input type="text" id="r-ip" placeholder="IP (192.168.88.1)" style="width:160px">
+      <input type="text" id="r-user" value="root" style="width:80px">
+      <input type="password" id="r-pass" placeholder="SSH пароль" style="width:130px">
+      <button class="btn btn-b" onclick="addRouter()">+ Добавить</button>
+    </div>
+    <div id="rm" class="msg"></div>
+  </div>
+  <div class="section">
+    <h2 style="font-size:14px;font-weight:700;margin-bottom:14px">📋 Роутеры</h2>
+    <div id="routers-list"><span style="color:var(--muted)">Загрузка...</span></div>
+  </div>
+</div>
+
+<!-- SETTINGS TAB -->
+<div id="tab-settings" style="display:none">
+  <div class="section">
+    <h2 style="font-size:14px;font-weight:700;margin-bottom:14px">🔑 Смена пароля</h2>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <input type="password" id="new-pwd" placeholder="Новый пароль" style="width:200px">
+      <input type="password" id="new-pwd2" placeholder="Повторить" style="width:200px">
+      <button class="btn btn-b" onclick="changePwd()">💾 Сохранить</button>
+    </div>
+    <div id="pwd-msg" class="msg"></div>
+  </div>
+</div>
+
+<script>
+// ── AUTH ──────────────────────────────────────────────────────────────────
+function getPass(){ return sessionStorage.getItem('hm_pass')||''; }
+function authHdr(){ return {'Content-Type':'application/json','X-Admin-Password':getPass()}; }
+function _showLogin(){ const o=document.getElementById('auth-overlay'); o.style.display='flex'; setTimeout(()=>document.getElementById('auth-pwd').focus(),100); }
+async function _checkAuth(){
+  const p=sessionStorage.getItem('hm_pass'); if(!p){ _showLogin(); return false; }
+  const r=await fetch('/api/auth',{headers:{'X-Admin-Password':p}});
+  if(!r.ok){ sessionStorage.removeItem('hm_pass'); _showLogin(); return false; }
+  return true;
+}
+async function _doLogin(){
+  const p=document.getElementById('auth-pwd').value; if(!p) return;
+  const err=document.getElementById('auth-err'),btn=document.getElementById('auth-btn');
+  err.style.display='none'; btn.textContent='Проверка...'; btn.disabled=true;
+  const r=await fetch('/api/auth',{headers:{'X-Admin-Password':p}});
+  if(r.ok){ sessionStorage.setItem('hm_pass',p); document.getElementById('auth-overlay').style.display='none'; _afterLogin(); }
+  else { err.style.display='block'; }
+  btn.textContent='Войти'; btn.disabled=false;
+}
+function logout(){ sessionStorage.removeItem('hm_pass'); _showLogin(); }
+function _afterLogin(){ loadConfig(); }
+
+// ── TABS ──────────────────────────────────────────────────────────────────
+const TABS = ['view','import','routers','settings'];
+function showTab(t){
+  TABS.forEach(id=>{ document.getElementById('tab-'+id).style.display=id===t?'':'none'; });
+  document.querySelectorAll('.tab').forEach((el,i)=>el.classList.toggle('active',i===TABS.indexOf(t)));
+  if(t==='import') loadExport();
+  if(t==='routers') loadRouters();
+}
+
+// ── CONFIG ────────────────────────────────────────────────────────────────
+let CFG={domain_groups:[],ip_groups:[]};
+let pendingChanges=false;
+function markPending(){ pendingChanges=true; document.getElementById('pending-banner').style.display='flex'; }
+function clearPending(){ pendingChanges=false; document.getElementById('pending-banner').style.display='none'; }
+function pc(p){ const m={'HydraRoute':'p-HydraRoute','RU':'p-RU','Google':'p-Google','amnezia':'p-HydraRoute'}; return m[p]||'p-default'; }
+
+async function loadConfig(){
+  CFG=await(await fetch('/hydra/config')).json();
+  const ver=await(await fetch('/hydra/version')).text();
+  document.getElementById('ver').textContent='v: '+ver.trim();
+  renderGroups();
+}
+function renderGroups(){
+  document.getElementById('dg-count').textContent=CFG.domain_groups.length;
+  document.getElementById('ig-count').textContent=CFG.ip_groups.length;
+  document.getElementById('domain-groups').innerHTML=CFG.domain_groups.map((g,i)=>groupCard(g,i,'domain')).join('');
+  document.getElementById('ip-groups').innerHTML=CFG.ip_groups.map((g,i)=>groupCard(g,i,'ip')).join('');
+}
+function groupCard(g,idx,type){
+  const key=`${type}-${idx}`;
+  const entries=g.entries.join('\n');
+  const preview=g.entries.slice(0,6).join('<br>')+(g.entries.length>6?`<br><span style="color:var(--border)">+${g.entries.length-6} ещё...</span>`:'');
+  return `<div class="group" id="card-${key}">
+    <div class="group-head">
+      <div style="display:flex;align-items:center;gap:8px">
+        <button class="toggle ${g.enabled?'on':''}" onclick="toggleGroup('${type}',${idx})"></button>
+        <span class="group-name">${g.name}</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span class="badge ${pc(g.policy)}">${g.policy}</span>
+        <div class="group-actions">
+          <button class="icon-btn" onclick="openEdit('${type}',${idx})">✏️</button>
+          <button class="icon-btn" onclick="deleteGroup('${type}','${g.name}')">🗑</button>
+        </div>
+      </div>
+    </div>
+    <div class="group-view" id="view-${key}">
+      <div class="entries-list">${preview}</div>
+      <div class="group-meta">${g.entries.length} записей · ${g.entry_type}</div>
+    </div>
+    <div class="group-edit" id="edit-${key}">
+      <div class="edit-label">Записи (по одной на строку):</div>
+      <textarea class="entries-ta" id="ta-${key}">${entries}</textarea>
+      <div class="add-quick">
+        <input class="quick-input" id="qi-${key}" placeholder="Быстро добавить домен или IP" onkeydown="if(event.key==='Enter')quickAdd('${type}',${idx})">
+        <button class="btn btn-b" onclick="quickAdd('${type}',${idx})">+</button>
+      </div>
+      <div class="edit-footer">
+        <div class="edit-footer-left">
+          <button class="btn btn-g" onclick="saveGroup('${type}',${idx})">💾 Сохранить</button>
+          <button class="btn btn-ghost" onclick="closeEdit('${type}',${idx})">Отмена</button>
+        </div>
+        <span style="font-size:11px;color:var(--muted)" id="cnt-${key}">${g.entries.length} записей</span>
+      </div>
+    </div>
+  </div>`;
+}
+function openEdit(type,idx){ const key=`${type}-${idx}`; document.getElementById(`edit-${key}`).classList.add('open'); document.getElementById(`card-${key}`).classList.add('editing'); const ta=document.getElementById(`ta-${key}`); ta.addEventListener('input',()=>{ document.getElementById(`cnt-${key}`).textContent=ta.value.split('\n').filter(l=>l.trim()).length+' записей'; }); }
+function closeEdit(type,idx){ const key=`${type}-${idx}`; document.getElementById(`edit-${key}`).classList.remove('open'); document.getElementById(`card-${key}`).classList.remove('editing'); }
+function quickAdd(type,idx){ const key=`${type}-${idx}`; const qi=document.getElementById(`qi-${key}`); const val=qi.value.trim(); if(!val)return; const ta=document.getElementById(`ta-${key}`); ta.value=ta.value.trimEnd()+(ta.value.trim()?'\n':'')+val; qi.value=''; document.getElementById(`cnt-${key}`).textContent=ta.value.split('\n').filter(l=>l.trim()).length+' записей'; }
+async function saveGroup(type,idx){ const key=`${type}-${idx}`; const g=type==='domain'?CFG.domain_groups[idx]:CFG.ip_groups[idx]; const entries=document.getElementById(`ta-${key}`).value.split('\n').map(l=>l.trim()).filter(l=>l); const url=type==='domain'?'/api/domain-group':'/api/ip-group'; try{ await fetch(url,{method:'POST',headers:authHdr(),body:JSON.stringify({...g,entries})}); sm('view-msg','ok',`✅ ${g.name} сохранён`); markPending(); await loadConfig(); }catch(e){sm('view-msg','err','❌ '+e)} }
+async function deleteGroup(type,name){ if(!confirm(`Удалить "${name}"?`))return; const url=type==='domain'?`/api/domain-group/${name}`:`/api/ip-group/${name}`; await fetch(url,{method:'DELETE',headers:{'X-Admin-Password':getPass()}}); sm('view-msg','ok',`🗑 ${name} удалён`); markPending(); await loadConfig(); }
+async function toggleGroup(type,idx){ const g=type==='domain'?CFG.domain_groups[idx]:CFG.ip_groups[idx]; const url=type==='domain'?'/api/domain-group':'/api/ip-group'; await fetch(url,{method:'POST',headers:authHdr(),body:JSON.stringify({...g,enabled:!g.enabled})}); markPending(); await loadConfig(); }
+function toggleNewGroup(type){ document.getElementById(type==='domain'?'new-domain-form':'new-ip-form').classList.toggle('open'); }
+async function saveNewGroup(type){ const pfx=type==='domain'?'nd':'ni'; const name=document.getElementById(`${pfx}-name`).value.trim(); const policy=document.getElementById(`${pfx}-policy`).value; const entry_type=document.getElementById(`${pfx}-type`).value; const raw=document.getElementById(`${pfx}-entries`).value; if(!name){alert('Введи имя группы');return;} const entries=raw.split(/[\n,]/).map(l=>l.trim()).filter(l=>l); const url=type==='domain'?'/api/domain-group':'/api/ip-group'; await fetch(url,{method:'POST',headers:authHdr(),body:JSON.stringify({name,entries,policy,entry_type,enabled:true})}); sm('view-msg','ok',`✅ Группа "${name}" создана`); document.getElementById(`${pfx}-name`).value=''; document.getElementById(`${pfx}-entries`).value=''; toggleNewGroup(type); markPending(); await loadConfig(); }
+
+// ── PUSH ──────────────────────────────────────────────────────────────────
+async function pushAll(){
+  const btn=document.getElementById('push-btn'); const log=document.getElementById('push-log');
+  btn.disabled=true; btn.innerHTML='<span class="spinner"></span>Обновляю...'; log.style.display='block'; log.textContent='Запуск...\n';
+  try{
+    const j=await(await fetch('/api/push_all',{method:'POST',headers:{'X-Admin-Password':getPass()}})).json();
+    log.textContent='';
+    for(const r of j.results) log.textContent+=`${r.ok?'✅':'❌'} ${r.router}: ${r.msg}\n`;
+    log.textContent+=`\nИтого: ${j.ok} успешно, ${j.failed} ошибок`;
+    if(j.failed===0) clearPending();
+  }catch(e){log.textContent='❌ '+e}
+  btn.disabled=false; btn.innerHTML='📡 Обновить все роутеры';
+}
+
+// ── IMPORT ────────────────────────────────────────────────────────────────
+async function importFiles(){ const dc=document.getElementById('dc-text').value.trim(); const il=document.getElementById('il-text').value.trim(); if(!dc&&!il){sm('im','err','❌ Поля пусты');return;} const b={}; if(dc)b.domain_conf=dc; if(il)b.ip_list=il; try{ const j=await(await fetch('/api/import',{method:'POST',headers:authHdr(),body:JSON.stringify(b)})).json(); sm('im','ok',`✅ ${j.domains} доменных групп, ${j.ips} IP групп`); markPending(); await loadConfig(); }catch(e){sm('im','err','❌ '+e)} }
+async function importAndPush(){ await importFiles(); setTimeout(pushAll,300); }
+async function loadExport(){ document.getElementById('dc-export').value=await(await fetch('/hydra/domain.conf')).text(); document.getElementById('il-export').value=await(await fetch('/hydra/ip.list')).text(); }
+
+// ── ROUTERS ───────────────────────────────────────────────────────────────
+async function loadRouters(){
+  const R=await(await fetch('/api/routers')).json();
+  const el=document.getElementById('routers-list');
+  if(!Object.keys(R).length){ el.innerHTML='<span style="color:var(--muted)">Роутеры не добавлены</span>'; return; }
+  el.innerHTML=Object.entries(R).map(([n,c])=>`<div class="ri"><span><span class="n">${n}</span> — ${c.ip}</span><button class="btn btn-r" style="font-size:11px;padding:5px 10px" onclick="delRouter('${n}')">✗</button></div>`).join('');
+}
+async function addRouter(){ const n=document.getElementById('r-name').value.trim(); if(!n)return; const b={ip:document.getElementById('r-ip').value.trim(),user:document.getElementById('r-user').value||'root',password:document.getElementById('r-pass').value}; try{ await fetch(`/api/routers/${n}`,{method:'POST',headers:authHdr(),body:JSON.stringify(b)}); sm('rm','ok','✅ '+n); loadRouters(); }catch(e){sm('rm','err','❌ '+e)} }
+async function delRouter(n){ if(!confirm(`Удалить ${n}?`))return; await fetch(`/api/routers/${n}`,{method:'DELETE',headers:{'X-Admin-Password':getPass()}}); loadRouters(); }
+
+// ── SETTINGS ──────────────────────────────────────────────────────────────
+async function changePwd(){ const p1=document.getElementById('new-pwd').value; const p2=document.getElementById('new-pwd2').value; if(p1!==p2){sm('pwd-msg','err','❌ Пароли не совпадают');return;} if(p1.length<4){sm('pwd-msg','err','❌ Минимум 4 символа');return;} try{ const r=await fetch('/api/set_password',{method:'POST',headers:authHdr(),body:JSON.stringify({password:p1})}); if(r.ok){ sessionStorage.setItem('hm_pass',p1); sm('pwd-msg','ok','✅ Пароль сохранён'); document.getElementById('new-pwd').value=''; document.getElementById('new-pwd2').value=''; } }catch(e){sm('pwd-msg','err','❌ '+e)} }
+
+function sm(id,c,t){const e=document.getElementById(id);e.className='msg '+c;e.textContent=t;e.style.display='block';setTimeout(()=>e.style.display='none',5000)}
+_checkAuth().then(ok=>{ if(ok) _afterLogin(); });
+</script></body></html>
