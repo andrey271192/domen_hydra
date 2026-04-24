@@ -2,6 +2,8 @@
 
 Веб-интерфейс для централизованного управления конфигурацией **HydraRoute Neo** на роутерах Keenetic. Без мониторинга, без Telegram — только домены и IP.
 
+![Превью веб-интерфейса](docs/preview.png)
+
 ---
 
 ## Интерфейс
@@ -49,14 +51,16 @@ nano server/.env   # задать ADMIN_PASSWORD
 systemctl restart hydra-manager
 ```
 
-Интерфейс: `http://IP:8000`
+Интерфейс: `http://ВАШ_IP:8000` (порт настраивается в `.env`).
 
 ---
 
 ## Установка на роутер (Keenetic + Entware)
 
+Подставь URL своего сервера:
+
 ```bash
-export SERVER_URL="http://IP_СЕРВЕРА:8000" \
+export SERVER_URL="http://ВАШ_IP:8000" \
   && curl -fsSL https://raw.githubusercontent.com/andrey271192/domen_hydra/main/install_router.sh | sh
 ```
 
@@ -72,7 +76,7 @@ sh /opt/bin/hydra_update.sh
 
 ## Как пользоваться
 
-1. Открой `http://IP:8000` → введи пароль из `.env`
+1. Открой веб-интерфейс → введи пароль из `.env`
 2. **Импорт**: вставь `domain.conf` и `ip.list` с роутера → «Сохранить на сервер»
 3. Редактируй группы на вкладке «Конфигурация»
 4. Нажми **«Обновить все роутеры»** — файлы запишутся в `/opt/etc/HydraRoute/` и выполнится `neo restart`
@@ -115,6 +119,9 @@ server/
   templates/
     index.html     — веб-интерфейс
 
+docs/
+  preview.png      — превью интерфейса
+
 install_router.sh  — установка на роутер
 hydra_update.sh    — скачивание конфига с сервера
 ```
@@ -131,13 +138,10 @@ cd /opt/domen-hydra && git pull && systemctl restart hydra-manager
 
 ## Поддержка проекта
 
-Развитие можно поддержать на [Boosty — донат](https://boosty.to/andrey27/donate). На GitHub у репозитория отображается кнопка **Sponsor** (файл `.github/FUNDING.yml`).
+[Boosty — донат](https://boosty.to/andrey27/donate). На GitHub доступна кнопка **Sponsor** (`.github/FUNDING.yml`).
 
 ---
 
 ## Связь с Keenetic Unified
 
 Логика парсинга `domain.conf` / `ip.list` и веб-интерфейс доменов взяты из проекта [keenetic-unified](https://github.com/andrey271192/keenetic-unified) в урезанном виде: только управление HydraRoute, без дашборда, watchdog и Telegram.
-
-поддержать автора 
-https://boosty.to/andrey27/donate
