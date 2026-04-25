@@ -201,9 +201,10 @@ input[type=text]:focus,input[type=password]:focus{border-color:var(--accent)}
 <div id="tab-routers" style="display:none">
   <div class="section">
     <h2 style="font-size:14px;font-weight:700;margin-bottom:14px">➕ Добавить роутер</h2>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:10px">Поле <b>IP</b> — адрес для <b>SSH</b> (LAN, белый IP или DDNS), не веб-ссылка KeenDNS. После сохранения можно <b>Тест SSH</b> и <b>Снять с роутера</b>.</p>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
       <input type="text" id="r-name" placeholder="Имя (andrey)" style="width:130px">
-      <input type="text" id="r-ip" placeholder="IP (192.168.88.1)" style="width:160px">
+      <input type="text" id="r-ip" placeholder="IP или hostname SSH" style="min-width:160px;flex:1;max-width:240px">
       <input type="text" id="r-user" value="root" style="width:80px">
       <input type="password" id="r-pass" placeholder="SSH пароль" style="width:130px">
       <button class="btn btn-b" onclick="addRouter()">+ Добавить</button>
@@ -213,6 +214,7 @@ input[type=text]:focus,input[type=password]:focus{border-color:var(--accent)}
   <div class="section">
     <h2 style="font-size:14px;font-weight:700;margin-bottom:14px">📋 Роутеры</h2>
     <div id="routers-list"><span style="color:var(--muted)">Загрузка...</span></div>
+    <div id="router-ops-msg" class="push-log" style="display:none;margin-top:12px;max-height:200px"></div>
   </div>
 </div>
 
@@ -352,10 +354,40 @@ async function loadRouters(){
   const R=await(await fetch('/api/routers')).json();
   const el=document.getElementById('routers-list');
   if(!Object.keys(R).length){ el.innerHTML='<span style="color:var(--muted)">Роутеры не добавлены</span>'; return; }
-  el.innerHTML=Object.entries(R).map(([n,c])=>`<div class="ri"><span><span class="n">${n}</span> — ${c.ip}</span><button class="btn btn-r" style="font-size:11px;padding:5px 10px" onclick="delRouter('${n}')">✗</button></div>`).join('');
+  el.innerHTML=Object.entries(R).map(([n,c])=>`<div class="ri" style="align-items:flex-start;gap:10px">
+    <div style="flex:1;min-width:0"><span class="n">${n}</span> <span style="color:var(--muted);font-size:12px">— ${c.ip||'—'}</span></div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end">
+      <button type="button" class="btn btn-ghost" style="font-size:11px;padding:5px 10px" onclick="testRouter(${JSON.stringify(n)})">🔌 Тест</button>
+      <button type="button" class="btn btn-b" style="font-size:11px;padding:5px 10px" onclick="pullRouter(${JSON.stringify(n)})">⬇ С роутера</button>
+      <button type="button" class="btn btn-r" style="font-size:11px;padding:5px 10px" onclick="delRouter(${JSON.stringify(n)})">✗</button>
+    </div></div>`).join('');
 }
-async function addRouter(){ const n=document.getElementById('r-name').value.trim(); if(!n)return; const b={ip:document.getElementById('r-ip').value.trim(),user:document.getElementById('r-user').value||'root',password:document.getElementById('r-pass').value}; try{ await fetch(`/api/routers/${n}`,{method:'POST',headers:authHdr(),body:JSON.stringify(b)}); sm('rm','ok','✅ '+n); loadRouters(); }catch(e){sm('rm','err','❌ '+e)} }
-async function delRouter(n){ if(!confirm(`Удалить ${n}?`))return; await fetch(`/api/routers/${n}`,{method:'DELETE',headers:{'X-Admin-Password':getPass()}}); loadRouters(); }
+async function addRouter(){ const n=document.getElementById('r-name').value.trim(); if(!n)return; const b={ip:document.getElementById('r-ip').value.trim(),user:document.getElementById('r-user').value||'root',password:document.getElementById('r-pass').value}; try{ await fetch('/api/routers/'+encodeURIComponent(n),{method:'POST',headers:authHdr(),body:JSON.stringify(b)}); sm('rm','ok','✅ '+n); loadRouters(); }catch(e){sm('rm','err','❌ '+e)} }
+async function delRouter(n){ if(!confirm('Удалить '+n+'?'))return; await fetch('/api/routers/'+encodeURIComponent(n),{method:'DELETE',headers:{'X-Admin-Password':getPass()}}); loadRouters(); }
+async function testRouter(n){
+  const log=document.getElementById('router-ops-msg');
+  log.style.display='block'; log.textContent='Проверка «'+n+'»…\n';
+  try{
+    const r=await fetch('/api/routers/'+encodeURIComponent(n)+'/test',{method:'POST',headers:{'X-Admin-Password':getPass()}});
+    const j=await r.json();
+    if(!r.ok){ log.textContent='❌ '+(j.detail||r.status); return; }
+    log.textContent=(j.ok?'✅':'⚠️')+' «'+n+'»\n'+j.detail;
+  }catch(e){ log.textContent='❌ '+e; }
+}
+async function pullRouter(n){
+  if(!confirm('Считать domain.conf и ip.list с «'+n+'» и подставить во вкладку «Импорт»? На сервер не сохранится, пока не нажмёшь «Сохранить на сервер».')) return;
+  try{
+    const r=await fetch('/api/routers/'+encodeURIComponent(n)+'/fetch',{headers:{'X-Admin-Password':getPass()}});
+    const j=await r.json();
+    if(!r.ok){ sm('rm','err','❌ '+(j.detail||r.status)); return; }
+    if(!j.domain_ok && !j.ip_ok){ sm('rm','err','❌ На роутере не найдены файлы в /opt/etc/HydraRoute или /opt/etc/hydra'); return; }
+    document.getElementById('dc-text').value=j.domain_ok?(j.domain_conf||''):'';
+    document.getElementById('il-text').value=j.ip_ok?(j.ip_list||''):'';
+    showTab('import');
+    const parts=[]; if(j.domain_ok) parts.push('domain.conf'); if(j.ip_ok) parts.push('ip.list');
+    sm('im','ok','✅ Подставлено: '+parts.join(', ')+(j.domain_ok&&j.ip_ok?'':' (часть файлов не найдена — пустое поле)'));
+  }catch(e){ sm('rm','err','❌ '+e); }
+}
 
 // ── SETTINGS ──────────────────────────────────────────────────────────────
 async function changePwd(){ const p1=document.getElementById('new-pwd').value; const p2=document.getElementById('new-pwd2').value; if(p1!==p2){sm('pwd-msg','err','❌ Пароли не совпадают');return;} if(p1.length<4){sm('pwd-msg','err','❌ Минимум 4 символа');return;} try{ const r=await fetch('/api/set_password',{method:'POST',headers:authHdr(),body:JSON.stringify({password:p1})}); if(r.ok){ sessionStorage.setItem('hm_pass',p1); sm('pwd-msg','ok','✅ Пароль сохранён'); document.getElementById('new-pwd').value=''; document.getElementById('new-pwd2').value=''; } }catch(e){sm('pwd-msg','err','❌ '+e)} }
