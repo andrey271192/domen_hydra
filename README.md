@@ -43,13 +43,18 @@
 
 ## Установка сервера (Ubuntu 22/24)
 
+Сначала перейди в **существующий** каталог (если ты был в удалённой папке вроде `/opt/keenetic-unified`, `git` выдаст `Unable to read current working directory` — тогда выполни `cd /opt` или `cd /`).
+
 ```bash
+cd /opt
 git clone https://github.com/andrey271192/domen_hydra.git /opt/domen-hydra
 cd /opt/domen-hydra
 bash server/install.sh
 nano server/.env   # при необходимости поправь плейсхолдеры (см. ниже)
 systemctl restart hydra-manager
 ```
+
+Сервис `hydra-manager` появляется **только после** успешного `bash server/install.sh`; сообщение `Unit hydra-manager.service not found` значит, что установка не дошла до конца (часто из‑за ошибки `git clone` выше).
 
 Скрипт `server/install.sh` при первом запуске **сам создаёт** `server/.env` из `server/.env.example` с уже заполненными полями (вместо паролей — текст-напоминание, его нужно заменить на свои секреты).
 
