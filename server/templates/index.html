@@ -350,17 +350,35 @@ async function importAndPush(){ await importFiles(); setTimeout(pushAll,300); }
 async function loadExport(){ document.getElementById('dc-export').value=await(await fetch('/hydra/domain.conf')).text(); document.getElementById('il-export').value=await(await fetch('/hydra/ip.list')).text(); }
 
 // ── ROUTERS ───────────────────────────────────────────────────────────────
+function _escHtml(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+(function _bindRouterList(){
+  const box=document.getElementById('routers-list');
+  if(!box||box.dataset.actBind==='1') return;
+  box.dataset.actBind='1';
+  box.addEventListener('click',async (e)=>{
+    const b=e.target.closest('button[data-r-act]');
+    if(!b) return;
+    const n=decodeURIComponent(b.getAttribute('data-router')||'');
+    const act=b.getAttribute('data-r-act');
+    if(act==='test') await testRouter(n);
+    else if(act==='pull') await pullRouter(n);
+    else if(act==='del') await delRouter(n);
+  });
+})();
 async function loadRouters(){
   const R=await(await fetch('/api/routers')).json();
   const el=document.getElementById('routers-list');
   if(!Object.keys(R).length){ el.innerHTML='<span style="color:var(--muted)">Роутеры не добавлены</span>'; return; }
-  el.innerHTML=Object.entries(R).map(([n,c])=>`<div class="ri" style="align-items:flex-start;gap:10px">
-    <div style="flex:1;min-width:0"><span class="n">${n}</span> <span style="color:var(--muted);font-size:12px">— ${c.ip||'—'}</span></div>
+  el.innerHTML=Object.entries(R).map(([n,c])=>{
+    const enc=encodeURIComponent(n);
+    return `<div class="ri" style="align-items:flex-start;gap:10px">
+    <div style="flex:1;min-width:0"><span class="n">${_escHtml(n)}</span> <span style="color:var(--muted);font-size:12px">— ${_escHtml(c.ip||'—')}</span></div>
     <div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end">
-      <button type="button" class="btn btn-ghost" style="font-size:11px;padding:5px 10px" onclick="testRouter(${JSON.stringify(n)})">🔌 Тест</button>
-      <button type="button" class="btn btn-b" style="font-size:11px;padding:5px 10px" onclick="pullRouter(${JSON.stringify(n)})">⬇ С роутера</button>
-      <button type="button" class="btn btn-r" style="font-size:11px;padding:5px 10px" onclick="delRouter(${JSON.stringify(n)})">✗</button>
-    </div></div>`).join('');
+      <button type="button" class="btn btn-ghost" style="font-size:11px;padding:5px 10px" data-r-act="test" data-router="${enc}">🔌 Тест</button>
+      <button type="button" class="btn btn-b" style="font-size:11px;padding:5px 10px" data-r-act="pull" data-router="${enc}">⬇ С роутера</button>
+      <button type="button" class="btn btn-r" style="font-size:11px;padding:5px 10px" data-r-act="del" data-router="${enc}">✗</button>
+    </div></div>`;
+  }).join('');
 }
 async function addRouter(){ const n=document.getElementById('r-name').value.trim(); if(!n)return; const b={ip:document.getElementById('r-ip').value.trim(),user:document.getElementById('r-user').value||'root',password:document.getElementById('r-pass').value}; try{ await fetch('/api/routers/'+encodeURIComponent(n),{method:'POST',headers:authHdr(),body:JSON.stringify(b)}); sm('rm','ok','✅ '+n); loadRouters(); }catch(e){sm('rm','err','❌ '+e)} }
 async function delRouter(n){ if(!confirm('Удалить '+n+'?'))return; await fetch('/api/routers/'+encodeURIComponent(n),{method:'DELETE',headers:{'X-Admin-Password':getPass()}}); loadRouters(); }
