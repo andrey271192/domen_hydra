@@ -142,8 +142,9 @@ server/
   hydra_manager.py — парсинг/генерация domain.conf + ip.list
   models.py        — модели данных
   database.py      — работа с JSON
-  install.sh       — установка на Ubuntu
-  .env.example     — шаблон конфигурации
+  install.sh         — установка на Ubuntu
+  uninstall.sh       — снятие systemd и каталога `/opt/domen-hydra` (см. README)
+  .env.example       — шаблон конфигурации
   templates/
     index.html     — веб-интерфейс
 
@@ -155,6 +156,16 @@ hydra_update.sh    — скачивание конфига с сервера
 ```
 
 ---
+
+## Удаление с сервера (одной командой)
+
+Останавливается `hydra-manager`, удаляется unit и каталог **`/opt/domen-hydra`**:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/andrey271192/domen_hydra/main/server/uninstall.sh | sudo bash
+```
+
+Из каталога установки: `sudo bash server/uninstall.sh`
 
 ## Обновление
 
