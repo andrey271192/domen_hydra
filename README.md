@@ -22,8 +22,11 @@
 
 - **Тест** — проверка SSH, каталога `/opt/etc/HydraRoute` (или `/opt/etc/hydra`) и наличия `domain.conf` / `ip.list` на роутере.
 - **С роутера** — скачать эти файлы по SSH и подставить во вкладку **«Импорт файлов»** (сохранение на сервер — отдельной кнопкой).
+- **На роутер** — отправить текущие `domain.conf` и `ip.list` с сервера **только на этот** роутер (аналог одной строки из «Обновить все роутеры»).
 
-API: `POST /api/routers/{имя}/test`, `GET /api/routers/{имя}/fetch` (заголовок `X-Admin-Password`).
+Внизу экрана — плашка **поддержки**: GitHub, Boosty (донат), Ozon СБП, Telegram @Iot_andrey.
+
+API: `POST /api/routers/{имя}/test`, `GET /api/routers/{имя}/fetch`, `POST /api/routers/{имя}/push` (заголовок `X-Admin-Password`).
 
 ### Вкладка «Настройки»
 

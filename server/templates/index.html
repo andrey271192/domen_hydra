@@ -2,7 +2,7 @@
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{--bg:#000;--card:#1c1c1e;--card2:#2c2c2e;--card3:#3a3a3c;--border:#38383a;--text:#f5f5f7;--muted:#86868b;--accent:#0a84ff;--green:#30d158;--red:#ff453a;--yellow:#ffd60a;--orange:#ff9f0a}
-body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display',sans-serif;background:var(--bg);color:var(--text);padding:20px 24px;max-width:1200px;margin:0 auto}
+body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display',sans-serif;background:var(--bg);color:var(--text);padding:20px 24px 56px;max-width:1200px;margin:0 auto}
 h1{font-size:22px;font-weight:700;margin-bottom:4px}
 .sub{color:var(--muted);font-size:13px;margin-bottom:20px}
 .topbar{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:20px;margin-top:12px}
@@ -362,6 +362,7 @@ function _escHtml(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(
     const act=b.getAttribute('data-r-act');
     if(act==='test') await testRouter(n);
     else if(act==='pull') await pullRouter(n);
+    else if(act==='push') await pushRouter(n);
     else if(act==='del') await delRouter(n);
   });
 })();
@@ -376,6 +377,7 @@ async function loadRouters(){
     <div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end">
       <button type="button" class="btn btn-ghost" style="font-size:11px;padding:5px 10px" data-r-act="test" data-router="${enc}">🔌 Тест</button>
       <button type="button" class="btn btn-b" style="font-size:11px;padding:5px 10px" data-r-act="pull" data-router="${enc}">⬇ С роутера</button>
+      <button type="button" class="btn btn-g" style="font-size:11px;padding:5px 10px" data-r-act="push" data-router="${enc}">📡 На роутер</button>
       <button type="button" class="btn btn-r" style="font-size:11px;padding:5px 10px" data-r-act="del" data-router="${enc}">✗</button>
     </div></div>`;
   }).join('');
@@ -406,10 +408,31 @@ async function pullRouter(n){
     sm('im','ok','✅ Подставлено: '+parts.join(', ')+(j.domain_ok&&j.ip_ok?'':' (часть файлов не найдена — пустое поле)'));
   }catch(e){ sm('rm','err','❌ '+e); }
 }
+async function pushRouter(n){
+  const log=document.getElementById('router-ops-msg');
+  log.style.display='block'; log.textContent='Отправка на «'+n+'»…\n';
+  try{
+    const r=await fetch('/api/routers/'+encodeURIComponent(n)+'/push',{method:'POST',headers:{'X-Admin-Password':getPass()}});
+    const j=await r.json();
+    if(!r.ok){ log.textContent='❌ '+(Array.isArray(j.detail)?j.detail.map(x=>x.msg||x).join(' '):(j.detail||r.status)); return; }
+    log.textContent=(j.ok?'✅':'❌')+' «'+n+'»: '+(j.msg||'');
+  }catch(e){ log.textContent='❌ '+e; }
+}
 
 // ── SETTINGS ──────────────────────────────────────────────────────────────
 async function changePwd(){ const p1=document.getElementById('new-pwd').value; const p2=document.getElementById('new-pwd2').value; if(p1!==p2){sm('pwd-msg','err','❌ Пароли не совпадают');return;} if(p1.length<4){sm('pwd-msg','err','❌ Минимум 4 символа');return;} try{ const r=await fetch('/api/set_password',{method:'POST',headers:authHdr(),body:JSON.stringify({password:p1})}); if(r.ok){ sessionStorage.setItem('hm_pass',p1); sm('pwd-msg','ok','✅ Пароль сохранён'); document.getElementById('new-pwd').value=''; document.getElementById('new-pwd2').value=''; } }catch(e){sm('pwd-msg','err','❌ '+e)} }
 
 function sm(id,c,t){const e=document.getElementById(id);e.className='msg '+c;e.textContent=t;e.style.display='block';setTimeout(()=>e.style.display='none',5000)}
 _checkAuth().then(ok=>{ if(ok) _afterLogin(); });
-</script></body></html>
+</script>
+<div id="hm-foot" lang="ru" style="position:fixed;bottom:10px;left:12px;z-index:90;max-width:min(96vw,720px);font-size:11px;font-weight:600;letter-spacing:.02em;color:#86868b;opacity:.92;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;line-height:1.3">
+  <span style="color:#6e6e73;font-weight:500;margin-right:2px">поддержка:</span>
+  <a href="https://github.com/andrey271192/domen_hydra" target="_blank" rel="noopener noreferrer" style="color:#a1a1a6;text-decoration:none;border-bottom:1px solid rgba(255,255,255,.12)">GitHub</a>
+  <span style="color:#86868b;user-select:none">·</span>
+  <a href="https://boosty.to/andrey27/donate" target="_blank" rel="noopener noreferrer" style="color:#a1a1a6;text-decoration:none;border-bottom:1px solid rgba(255,255,255,.12)">Boosty&nbsp;(донат)</a>
+  <span style="color:#86868b;user-select:none">·</span>
+  <a href="https://finance.ozon.ru/apps/sbp/ozonbankpay/019dc200-2a5d-7931-a619-782d285f6798" target="_blank" rel="noopener noreferrer" title="Поддержка (Ozon Bank, СБП)" style="color:#a1a1a6;text-decoration:none;border-bottom:1px solid rgba(255,255,255,.12)">Ozon&nbsp;СБП</a>
+  <span style="color:#86868b;user-select:none">·</span>
+  <a href="https://t.me/Iot_andrey" target="_blank" rel="noopener noreferrer" style="color:#a1a1a6;text-decoration:none;border-bottom:1px solid rgba(255,255,255,.12)">Telegram&nbsp;@Iot_andrey</a>
+</div>
+</body></html>

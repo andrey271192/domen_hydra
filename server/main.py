@@ -68,6 +68,41 @@ async def _ssh_on_router(rcfg: dict, remote_cmd: str, timeout: int = 45) -> tupl
     except Exception as e:
         return 1, "", str(e)
 
+
+async def _push_one_router(server_url: str, router_key: str, rcfg: dict) -> dict:
+    """Скачать с manager domain.conf + ip.list на роутер по SSH и neo restart."""
+    ip = rcfg.get("ip", "")
+    if not ip:
+        return {"router": router_key, "ok": False, "msg": "нет IP"}
+    user = rcfg.get("user") or config.SSH_USER
+    pwd = rcfg.get("password") or config.SSH_PASS
+    cmd = (
+        f"curl -sf '{server_url}/hydra/domain.conf' -o /opt/etc/HydraRoute/domain.conf && "
+        f"curl -sf '{server_url}/hydra/ip.list' -o /opt/etc/HydraRoute/ip.list && "
+        f"neo restart"
+    )
+    try:
+        r = await asyncio.to_thread(
+            subprocess.run,
+            [
+                "sshpass", "-p", pwd, "ssh",
+                "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
+                f"{user}@{ip}", cmd,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        tail = ((r.stdout or "") + (r.stderr or ""))[:400]
+        return {
+            "router": router_key,
+            "ok": r.returncode == 0,
+            "msg": tail or ("ok" if r.returncode == 0 else "exit " + str(r.returncode)),
+        }
+    except Exception as e:
+        return {"router": router_key, "ok": False, "msg": str(e)}
+
+
 # ── Pages ────────────────────────────────────────────────────────────────────
 
 @app.get("/", response_class=HTMLResponse)
@@ -171,33 +206,7 @@ async def push_all(request: Request, x_admin_password: str = Header("")):
     server_url = str(request.base_url).rstrip("/")
     results = []
     for name, rcfg in routers.items():
-        ip = rcfg.get("ip", "")
-        if not ip:
-            results.append({"router": name, "ok": False, "msg": "нет IP"})
-            continue
-        user = rcfg.get("user") or config.SSH_USER
-        pwd = rcfg.get("password") or config.SSH_PASS
-        cmd = (
-            f"curl -sf '{server_url}/hydra/domain.conf' -o /opt/etc/HydraRoute/domain.conf && "
-            f"curl -sf '{server_url}/hydra/ip.list' -o /opt/etc/HydraRoute/ip.list && "
-            f"neo restart"
-        )
-        try:
-            r = await asyncio.to_thread(
-                subprocess.run,
-                [
-                    "sshpass", "-p", pwd, "ssh",
-                    "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
-                    f"{user}@{ip}", cmd,
-                ],
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
-            tail = ((r.stdout or "") + (r.stderr or ""))[:400]
-            results.append({"router": name, "ok": r.returncode == 0, "msg": tail or ("ok" if r.returncode == 0 else "exit " + str(r.returncode))})
-        except Exception as e:
-            results.append({"router": name, "ok": False, "msg": str(e)})
+        results.append(await _push_one_router(server_url, name, rcfg))
     return {"results": results, "ok": sum(1 for r in results if r["ok"]), "failed": sum(1 for r in results if not r["ok"])}
 
 # ── Routers CRUD ──────────────────────────────────────────────────────────────
@@ -255,6 +264,17 @@ async def fetch_from_router(name: str, x_admin_password: str = Header("")):
         "ip_ok": code_i == 0,
         "errors": {"domain": err_d if code_d else "", "ip": err_i if code_i else ""},
     }
+
+
+@app.post("/api/routers/{name}/push")
+async def push_one_router(name: str, request: Request, x_admin_password: str = Header("")):
+    """Отправить текущий domain.conf + ip.list только на один роутер."""
+    _chk(x_admin_password)
+    key = _router_key(name)
+    rcfg = _get_router_cfg(name)
+    server_url = str(request.base_url).rstrip("/")
+    return await _push_one_router(server_url, key, rcfg)
+
 
 @app.delete("/api/routers/{name}")
 async def delete_router(name: str, x_admin_password: str = Header("")):
