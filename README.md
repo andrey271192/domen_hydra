@@ -47,11 +47,34 @@
 git clone https://github.com/andrey271192/domen_hydra.git /opt/domen-hydra
 cd /opt/domen-hydra
 bash server/install.sh
-nano server/.env   # задать ADMIN_PASSWORD
+nano server/.env   # при необходимости поправь плейсхолдеры (см. ниже)
 systemctl restart hydra-manager
 ```
 
-Интерфейс: `http://ВАШ_IP:8000` (порт настраивается в `.env`).
+Скрипт `server/install.sh` при первом запуске **сам создаёт** `server/.env` из `server/.env.example` с уже заполненными полями (вместо паролей — текст-напоминание, его нужно заменить на свои секреты).
+
+### Файл `server/.env`
+
+| Переменная | Назначение |
+|------------|------------|
+| `HOST` | Адрес привязки HTTP (обычно `0.0.0.0`). |
+| `PORT` | Порт веб-интерфейса (по умолчанию `8000`). |
+| `ADMIN_PASSWORD` | Пароль входа в веб-интерфейс. |
+| `SSH_USER` | Пользователь SSH для «Обновить все роутеры». |
+| `SSH_PASS` | Пароль SSH по умолчанию (на карточке роутера можно задать свой). |
+
+Шаблон по умолчанию (после установки открой `nano server/.env` и подставь реальные пароли):
+
+```env
+HOST=0.0.0.0
+PORT=8000
+ADMIN_PASSWORD=ВАШ_НАДЁЖНЫЙ_ПАРОЛЬ_ВЕБ
+
+SSH_USER=root
+SSH_PASS=ПАРОЛЬ_SSH_РОУТЕРА
+```
+
+Интерфейс: `http://ВАШ_IP:PORT` — значения `HOST` и `PORT` из `server/.env` подставляются в `hydra-manager.service` при запуске `server/install.sh`. Если поменяешь порт в `.env` уже после установки, снова выполни `bash server/install.sh` (или вручную обнови `ExecStart` в unit и `systemctl daemon-reload`).
 
 ---
 
