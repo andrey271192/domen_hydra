@@ -115,6 +115,7 @@ input[type=text]:focus,input[type=password]:focus{border-color:var(--accent)}
   <button class="tab active" onclick="showTab('view')">📋 Конфигурация</button>
   <button class="tab" onclick="showTab('import')">⬆ Импорт файлов</button>
   <button class="tab" onclick="showTab('routers')">🔧 Роутеры</button>
+  <button class="tab" onclick="showTab('vpn')">🔒 WireGuard VPN</button>
   <button class="tab" onclick="showTab('settings')">⚙ Настройки</button>
 </div>
 
@@ -241,6 +242,39 @@ input[type=text]:focus,input[type=password]:focus{border-color:var(--accent)}
   </div>
 </div>
 
+<!-- VPN TAB -->
+<div id="tab-vpn" style="display:none">
+  <div class="section">
+    <div class="section-head">
+      <h2>🖥 WireGuard сервер (VPS)</h2>
+      <button class="btn btn-ghost" onclick="loadWg()" style="font-size:11px">↺ Обновить</button>
+    </div>
+    <div id="wg-server-card"><span style="color:var(--muted)">Загрузка...</span></div>
+  </div>
+  <div class="section" id="wg-routers-section" style="display:none">
+    <div class="section-head">
+      <h2>📡 Роутеры в VPN</h2>
+    </div>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Добавь роутер — сгенерируются ключи и IP. Потом нажми «Установить на роутер» — скрипт сам настроит WireGuard через SSH.</p>
+    <div id="wg-routers-list"></div>
+    <div id="wg-ops-log" style="display:none;background:var(--card2);border-radius:10px;padding:12px;font-size:11px;font-family:monospace;white-space:pre-wrap;max-height:220px;overflow-y:auto;margin-top:12px;color:var(--text)"></div>
+  </div>
+</div>
+
+<!-- WG CONFIG MODAL -->
+<div id="wg-cfg-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1000;align-items:center;justify-content:center">
+  <div style="background:var(--card);border-radius:18px;padding:24px;max-width:620px;width:94%;position:relative">
+    <button onclick="document.getElementById('wg-cfg-modal').style.display='none'" style="position:absolute;top:14px;right:16px;background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer">✕</button>
+    <h2 style="font-size:15px;font-weight:700;margin-bottom:12px" id="wg-cfg-title">WireGuard конфиг</h2>
+    <textarea id="wg-cfg-text" readonly style="width:100%;min-height:260px;background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:12px;font-size:11px;font-family:monospace;color:var(--text);resize:vertical;outline:none"></textarea>
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <button class="btn btn-b" onclick="copyWgCfg()">📋 Копировать</button>
+      <button class="btn btn-ghost" onclick="document.getElementById('wg-cfg-modal').style.display='none'">✓ Закрыть</button>
+    </div>
+    <div id="wg-cfg-hint" style="margin-top:10px;font-size:11px;color:var(--muted)"></div>
+  </div>
+</div>
+
 <!-- SETTINGS TAB -->
 <div id="tab-settings" style="display:none">
   <div class="section">
@@ -278,12 +312,13 @@ function logout(){ sessionStorage.removeItem('hm_pass'); _showLogin(); }
 function _afterLogin(){ loadConfig(); }
 
 // ── TABS ──────────────────────────────────────────────────────────────────
-const TABS = ['view','import','routers','settings'];
+const TABS = ['view','import','routers','vpn','settings'];
 function showTab(t){
   TABS.forEach(id=>{ document.getElementById('tab-'+id).style.display=id===t?'':'none'; });
   document.querySelectorAll('.tab').forEach((el,i)=>el.classList.toggle('active',i===TABS.indexOf(t)));
   if(t==='import') loadExport();
   if(t==='routers') loadRouters();
+  if(t==='vpn') loadWg();
 }
 
 // ── CONFIG ────────────────────────────────────────────────────────────────
@@ -496,6 +531,149 @@ async function checkTunnelStatus(){
     el.textContent=j.active?'✅ Активен (порт '+j.tunnel_port+')':'❌ Не активен';
     el.style.color=j.active?'var(--green)':'var(--red)';
   }catch(e){el.textContent='❌ '+e; el.style.color='var(--red)';}
+}
+
+// ── WIREGUARD VPN ─────────────────────────────────────────────────────────
+let WG = null;
+
+async function loadWg(){
+  try {
+    const r = await fetch('/api/wireguard', {headers: authHdr()});
+    WG = await r.json();
+    renderWgServer();
+    await renderWgRouters();
+  } catch(e) {
+    document.getElementById('wg-server-card').innerHTML = '<span style="color:var(--red)">Ошибка загрузки: '+e+'</span>';
+  }
+}
+
+function renderWgServer(){
+  const el = document.getElementById('wg-server-card');
+  if(!WG.initialized){
+    el.innerHTML = `
+      <p style="font-size:13px;color:var(--muted);margin-bottom:14px">WireGuard не установлен на VPS. Нажми кнопку — скрипт установит <code>wireguard</code>, сгенерирует ключи и запустит сервер.</p>
+      <button class="btn btn-b" onclick="wgInitServer()" id="wg-init-btn">⚡ Установить WireGuard на VPS</button>
+      <div id="wg-init-msg" class="msg"></div>`;
+  } else {
+    const statusColor = WG.running ? 'var(--green)' : 'var(--red)';
+    const statusText  = WG.running ? '✅ Работает (wg0)' : '❌ Остановлен';
+    el.innerHTML = `
+      <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">
+        <div style="min-width:120px">
+          <div style="font-size:11px;color:var(--muted);margin-bottom:2px">Статус</div>
+          <div style="font-weight:700;color:${statusColor}">${statusText}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:6px">Порт</div>
+          <div style="font-weight:600">${WG.port}</div>
+        </div>
+        <div style="flex:1;min-width:200px">
+          <div style="font-size:11px;color:var(--muted);margin-bottom:2px">Публичный ключ VPS (для клиентов)</div>
+          <div style="font-family:monospace;font-size:11px;word-break:break-all;background:var(--card2);padding:8px 10px;border-radius:8px">${WG.public_key}</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          ${!WG.running ? `<button class="btn btn-b" onclick="wgInitServer()">⚡ Запустить</button>` : ''}
+          <button class="btn btn-ghost" onclick="wgShowServerConfig()" style="font-size:11px">📄 wg0.conf</button>
+        </div>
+      </div>`;
+    document.getElementById('wg-routers-section').style.display = '';
+  }
+}
+
+async function renderWgRouters(){
+  if(!WG || !WG.initialized) return;
+  let routers = {};
+  try { routers = await (await fetch('/api/routers', {headers: authHdr()})).json(); } catch(e){}
+  const el = document.getElementById('wg-routers-list');
+  const entries = Object.entries(routers);
+  if(!entries.length){ el.innerHTML = '<p style="color:var(--muted);font-size:12px">Нет роутеров. Добавь их во вкладке «Роутеры».</p>'; return; }
+  el.innerHTML = entries.map(([name, r]) => {
+    const peer = WG.peers[name];
+    const hasPeer = !!peer;
+    return `<div style="background:var(--card2);border-radius:12px;padding:12px 14px;margin-bottom:8px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <div style="font-weight:700;font-size:13px;min-width:110px">${name}</div>
+      <div style="font-size:12px;flex:1">
+        ${hasPeer
+          ? `<span style="color:var(--green)">● VPN&nbsp;IP:&nbsp;<b>${peer.ip}</b></span>`
+          : `<span style="color:var(--muted)">— не добавлен</span>`}
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        ${!hasPeer
+          ? `<button class="btn btn-b" style="font-size:11px" onclick="wgAddPeer('${name}')">+ В VPN</button>`
+          : `<button class="btn btn-g" style="font-size:11px" onclick="wgDeploy('${name}')">📡 Установить на роутер</button>
+             <button class="btn btn-ghost" style="font-size:11px" onclick="wgShowRouterConfig('${name}')">📄 Конфиг</button>
+             <button class="btn btn-r" style="font-size:11px" onclick="wgRemovePeer('${name}')">✕ Убрать</button>`}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function wgInitServer(){
+  const btn = document.getElementById('wg-init-btn');
+  if(btn){ btn.disabled=true; btn.textContent='Устанавливаю (~1 мин)...'; }
+  try {
+    const r = await fetch('/api/wireguard/init', {method:'POST', headers: authHdr()});
+    const d = await r.json();
+    if(d.ok){ await loadWg(); }
+    else { alert('Ошибка: '+(d.detail||JSON.stringify(d))); if(btn){btn.disabled=false;btn.textContent='⚡ Установить WireGuard на VPS';} }
+  } catch(e){ alert('Ошибка: '+e); if(btn){btn.disabled=false;btn.textContent='⚡ Установить WireGuard на VPS';} }
+}
+
+async function wgAddPeer(name){
+  try {
+    const r = await fetch(`/api/routers/${encodeURIComponent(name)}/wireguard`, {method:'POST', headers: authHdr()});
+    const d = await r.json();
+    if(d.ok){ await loadWg(); }
+    else alert('Ошибка: '+(d.detail||JSON.stringify(d)));
+  } catch(e){ alert('Ошибка: '+e); }
+}
+
+async function wgRemovePeer(name){
+  if(!confirm(`Удалить ${name} из WireGuard VPN?`)) return;
+  try {
+    await fetch(`/api/routers/${encodeURIComponent(name)}/wireguard`, {method:'DELETE', headers: authHdr()});
+    await loadWg();
+  } catch(e){ alert('Ошибка: '+e); }
+}
+
+async function wgDeploy(name){
+  const log = document.getElementById('wg-ops-log');
+  log.style.display = 'block';
+  log.textContent = `Устанавливаю WireGuard на роутер «${name}»...\n`;
+  try {
+    const r = await fetch(`/api/routers/${encodeURIComponent(name)}/wireguard/deploy`, {method:'POST', headers: authHdr()});
+    const d = await r.json();
+    log.textContent += d.output || '';
+    if(!d.ok) log.textContent += '\n❌ Завершилось с ошибкой';
+    else log.textContent += '\n✅ Готово';
+    log.scrollTop = log.scrollHeight;
+  } catch(e){ log.textContent += '\nОшибка: '+e; }
+}
+
+async function wgShowServerConfig(){
+  try {
+    const r = await fetch('/api/wireguard/server-config', {headers: authHdr()});
+    const text = await r.text();
+    document.getElementById('wg-cfg-title').textContent = 'wg0.conf — конфиг VPS сервера';
+    document.getElementById('wg-cfg-text').value = text;
+    document.getElementById('wg-cfg-hint').textContent = 'Этот файл лежит на VPS в /etc/wireguard/wg0.conf';
+    document.getElementById('wg-cfg-modal').style.display = 'flex';
+  } catch(e){ alert('Ошибка: '+e); }
+}
+
+async function wgShowRouterConfig(name){
+  try {
+    const r = await fetch(`/api/routers/${encodeURIComponent(name)}/wireguard-config`, {headers: authHdr()});
+    const text = await r.text();
+    document.getElementById('wg-cfg-title').textContent = `wg0.conf — конфиг роутера «${name}»`;
+    document.getElementById('wg-cfg-text').value = text;
+    document.getElementById('wg-cfg-hint').textContent = 'Можно вручную добавить в Keenetic: Интернет → WireGuard → Добавить подключение → Вставить из буфера';
+    document.getElementById('wg-cfg-modal').style.display = 'flex';
+  } catch(e){ alert('Ошибка: '+e); }
+}
+
+function copyWgCfg(){
+  const t = document.getElementById('wg-cfg-text').value;
+  if(navigator.clipboard){ navigator.clipboard.writeText(t); }
+  else { document.getElementById('wg-cfg-text').select(); document.execCommand('copy'); }
 }
 
 // ── SETTINGS ──────────────────────────────────────────────────────────────

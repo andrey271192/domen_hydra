@@ -2,6 +2,7 @@
 import asyncio
 import logging
 import os
+import re
 import secrets
 import socket
 import subprocess
@@ -525,4 +526,245 @@ async def tunnel_remove(name: str, x_admin_password: str = Header("")):
     rcfg.pop("tunnel_port", None)
     R[key] = rcfg
     save_json(config.ROUTERS_FILE, R)
+    return {"ok": True}
+
+
+# ── WireGuard VPN ─────────────────────────────────────────────────────────────
+
+_WG_DATA = config.DATA_DIR / "wireguard.json"
+_WG_SUBNET = "10.8.0"
+
+
+def _load_wg() -> dict:
+    return load_json(_WG_DATA, {"server": {}, "peers": {}})
+
+
+def _save_wg(d: dict):
+    save_json(_WG_DATA, d)
+
+
+def _wg_genkey() -> tuple[str, str]:
+    r = subprocess.run(["wg", "genkey"], capture_output=True, text=True, timeout=5)
+    if r.returncode != 0:
+        raise RuntimeError("wg не найден. На VPS: apt install wireguard-tools")
+    priv = r.stdout.strip()
+    pub = subprocess.run(["wg", "pubkey"], input=priv, capture_output=True, text=True, timeout=5).stdout.strip()
+    return priv, pub
+
+
+def _wg_next_ip(peers: dict) -> str:
+    used = {int(v["ip"].split(".")[-1]) for v in peers.values() if v.get("ip")}
+    for i in range(2, 255):
+        if i not in used:
+            return f"{_WG_SUBNET}.{i}"
+    raise RuntimeError("Нет свободных IP в WG-подсети")
+
+
+def _wg_server_conf(data: dict) -> str:
+    srv = data["server"]
+    try:
+        r = subprocess.run(["ip", "route", "get", "8.8.8.8"], capture_output=True, text=True, timeout=5)
+        m = re.search(r"dev (\S+)", r.stdout)
+        iface = m.group(1) if m else "eth0"
+    except Exception:
+        iface = "eth0"
+    lines = [
+        "[Interface]",
+        f"PrivateKey = {srv['private_key']}",
+        f"Address = {_WG_SUBNET}.1/24",
+        f"ListenPort = {srv.get('port', 51820)}",
+        f"PostUp = iptables -A FORWARD -i wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o {iface} -j MASQUERADE",
+        f"PostDown = iptables -D FORWARD -i wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o {iface} -j MASQUERADE",
+        "",
+    ]
+    for rname, peer in data.get("peers", {}).items():
+        lines += [f"# {rname}", "[Peer]", f"PublicKey = {peer['public_key']}",
+                  f"AllowedIPs = {peer['ip']}/32", ""]
+    return "\n".join(lines)
+
+
+def _wg_client_conf(data: dict, rkey: str, vps_host: str) -> str:
+    srv = data["server"]
+    peer = data["peers"][rkey]
+    return (
+        "[Interface]\n"
+        f"PrivateKey = {peer['private_key']}\n"
+        f"Address = {peer['ip']}/32\n"
+        "DNS = 8.8.8.8\n\n"
+        "[Peer]\n"
+        f"PublicKey = {srv['public_key']}\n"
+        f"Endpoint = {vps_host}:{srv.get('port', 51820)}\n"
+        "AllowedIPs = 0.0.0.0/0\n"
+        "PersistentKeepalive = 25\n"
+    )
+
+
+def _wg_reload(conf: str):
+    p = Path("/etc/wireguard/wg0.conf")
+    p.write_text(conf)
+    p.chmod(0o600)
+    subprocess.run(
+        ["bash", "-c", "wg syncconf wg0 <(wg-quick strip /etc/wireguard/wg0.conf) 2>/dev/null || true"],
+        timeout=10,
+    )
+
+
+@app.get("/api/wireguard")
+async def wg_get(x_admin_password: str = Header("")):
+    _chk(x_admin_password)
+    data = _load_wg()
+    srv = data.get("server", {})
+    running = False
+    if srv.get("private_key"):
+        try:
+            running = subprocess.run(["wg", "show", "wg0"], capture_output=True, timeout=5).returncode == 0
+        except Exception:
+            pass
+    return {
+        "initialized": bool(srv.get("private_key")),
+        "running": running,
+        "public_key": srv.get("public_key", ""),
+        "port": srv.get("port", 51820),
+        "peers": {k: {"ip": v.get("ip"), "public_key": v.get("public_key")}
+                  for k, v in data.get("peers", {}).items()},
+    }
+
+
+@app.post("/api/wireguard/init")
+async def wg_init_server(x_admin_password: str = Header("")):
+    _chk(x_admin_password)
+    data = _load_wg()
+    if not data["server"].get("private_key"):
+        priv, pub = await asyncio.to_thread(_wg_genkey)
+        data["server"] = {"private_key": priv, "public_key": pub, "port": 51820}
+        _save_wg(data)
+    conf = _wg_server_conf(data)
+
+    def _setup():
+        subprocess.run(["apt-get", "install", "-y", "--no-install-recommends", "wireguard"],
+                       capture_output=True, timeout=120)
+        subprocess.run(["sysctl", "-w", "net.ipv4.ip_forward=1"], capture_output=True, timeout=5)
+        Path("/etc/sysctl.d/99-wg.conf").write_text("net.ipv4.ip_forward=1\n")
+        Path("/etc/wireguard").mkdir(parents=True, exist_ok=True)
+        _wg_reload(conf)
+        subprocess.run(["systemctl", "enable", "wg-quick@wg0"], capture_output=True, timeout=10)
+        subprocess.run(["systemctl", "restart", "wg-quick@wg0"], capture_output=True, timeout=30)
+
+    await asyncio.to_thread(_setup)
+    running = subprocess.run(["wg", "show", "wg0"], capture_output=True, timeout=5).returncode == 0
+    return {"ok": True, "running": running, "public_key": data["server"]["public_key"]}
+
+
+@app.get("/api/wireguard/server-config", response_class=PlainTextResponse)
+async def wg_server_config(x_admin_password: str = Header("")):
+    _chk(x_admin_password)
+    data = _load_wg()
+    if not data["server"].get("private_key"):
+        raise HTTPException(400, "WireGuard не инициализирован")
+    return _wg_server_conf(data)
+
+
+@app.post("/api/routers/{name}/wireguard")
+async def wg_add_peer(name: str, x_admin_password: str = Header("")):
+    _chk(x_admin_password)
+    data = _load_wg()
+    if not data["server"].get("private_key"):
+        raise HTTPException(400, "Сначала инициализируй WireGuard сервер")
+    key = _router_key(name)
+    peers = data.setdefault("peers", {})
+    if key not in peers:
+        priv, pub = await asyncio.to_thread(_wg_genkey)
+        peers[key] = {"private_key": priv, "public_key": pub, "ip": _wg_next_ip(peers)}
+        _save_wg(data)
+        await asyncio.to_thread(_wg_reload, _wg_server_conf(data))
+    return {"ok": True, "ip": peers[key]["ip"], "public_key": peers[key]["public_key"]}
+
+
+@app.get("/api/routers/{name}/wireguard-config", response_class=PlainTextResponse)
+async def wg_router_config(name: str, x_admin_password: str = Header("")):
+    _chk(x_admin_password)
+    data = _load_wg()
+    key = _router_key(name)
+    if key not in data.get("peers", {}):
+        raise HTTPException(404, "Пир не найден")
+    return _wg_client_conf(data, key, config.VPS_SSH_HOST or "VPS_IP")
+
+
+@app.post("/api/routers/{name}/wireguard/deploy")
+async def wg_deploy(name: str, x_admin_password: str = Header("")):
+    _chk(x_admin_password)
+    data = _load_wg()
+    key = _router_key(name)
+    if key not in data.get("peers", {}):
+        raise HTTPException(400, "Сначала добавь роутер в WireGuard")
+    vps_host = config.VPS_SSH_HOST or ""
+    if not vps_host:
+        raise HTTPException(400, "VPS_SSH_HOST не задан в .env")
+    rcfg = _get_router_cfg(name)
+    peer = data["peers"][key]
+    srv = data["server"]
+    wg_conf = _wg_client_conf(data, key, vps_host)
+    priv_key = peer["private_key"]
+    pub_key = srv["public_key"]
+    port = srv.get("port", 51820)
+    client_ip = peer["ip"]
+
+    script = f"""\
+set -e
+echo '[1/3] Установка wireguard-tools...'
+opkg update 2>/dev/null || true
+opkg install wireguard-tools kmod-wireguard 2>/dev/null || true
+command -v wg >/dev/null 2>&1 || {{ echo 'ОШИБКА: wg не установлен'; exit 1; }}
+
+echo '[2/3] Запись конфига...'
+mkdir -p /opt/etc/wireguard
+cat > /opt/etc/wireguard/wg0.conf << 'WGEOF'
+{wg_conf}WGEOF
+chmod 600 /opt/etc/wireguard/wg0.conf
+cat > /opt/etc/init.d/S50wg0 << 'INITEOF'
+#!/bin/sh
+case "$1" in
+  start)   wg-quick up /opt/etc/wireguard/wg0.conf 2>/dev/null ;;
+  stop)    wg-quick down /opt/etc/wireguard/wg0.conf 2>/dev/null ;;
+  restart) wg-quick down /opt/etc/wireguard/wg0.conf 2>/dev/null; wg-quick up /opt/etc/wireguard/wg0.conf ;;
+esac
+INITEOF
+chmod +x /opt/etc/init.d/S50wg0
+
+echo '[3/3] Запуск VPN...'
+wg-quick down /opt/etc/wireguard/wg0.conf 2>/dev/null || true
+wg-quick up /opt/etc/wireguard/wg0.conf
+
+if command -v ndmc >/dev/null 2>&1; then
+  printf '%s\\n' \\
+    'interface Wireguard0' \\
+    'description HydraVPN' \\
+    'wireguard private-key {priv_key}' \\
+    'wireguard peer {pub_key}' \\
+    'wireguard allowed-ips 0.0.0.0 0.0.0.0' \\
+    'wireguard endpoint {vps_host} {port}' \\
+    'wireguard persistent-keepalive 25' \\
+    'exit' \\
+    'system configuration save' | ndmc 2>/dev/null && \\
+    echo 'Keenetic CLI: нативная интеграция OK (проверь в Подключениях)' || \\
+    echo 'Keenetic CLI: не удалось, wg-quick запущен'
+fi
+
+echo '=== OK ==='
+echo 'VPN IP роутера: {client_ip}'
+ip addr show wg0 2>/dev/null | grep inet || wg show wg0 2>/dev/null || true
+"""
+
+    rc, out, err = await _ssh_on_router(rcfg, script, timeout=120)
+    return {"ok": rc == 0, "output": (out + err)[:1000]}
+
+
+@app.delete("/api/routers/{name}/wireguard")
+async def wg_remove_peer(name: str, x_admin_password: str = Header("")):
+    _chk(x_admin_password)
+    data = _load_wg()
+    key = _router_key(name)
+    data.get("peers", {}).pop(key, None)
+    _save_wg(data)
+    await asyncio.to_thread(_wg_reload, _wg_server_conf(data))
     return {"ok": True}
