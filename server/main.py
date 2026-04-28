@@ -744,42 +744,39 @@ if [ -n "$REALM" ] && [ -n "$CHAL" ]; then
     -d '{{"login":"admin","password":"'"$RESP"'"}}')
   echo "Login: $LOGIN"
 
+  echo "=== Существующий Wireguard0 (для проверки формата) ==="
+  curl -s -b /tmp/rci.jar 'http://localhost/rci/interface/Wireguard0' 2>/dev/null | head -c 800
+  echo ""
+
   # Найти следующий свободный последовательный индекс WireGuard
-  # Keenetic требует последовательную нумерацию: 0,1,2...
-  # nwgN = WireguardN в RCI
   MAX_WG=-1
   for i in $(seq 0 20); do
     wg show nwg$i >/dev/null 2>&1 && MAX_WG=$i
   done
   WG_IDX=$((MAX_WG + 1))
-  echo "Существующие интерфейсы до nwg${{MAX_WG}}, создаём Wireguard${{WG_IDX}} (nwg${{WG_IDX}})"
+  echo "Создаём Wireguard${{WG_IDX}} (nwg${{WG_IDX}})"
 
-  # JSON для RCI: создать WireGuard интерфейс
+  # JSON с правильными именами полей Keenetic: allowed-address, keepalive
   cat > /tmp/wg_rci.json << RCIEOF
-{{"interface":{{"Wireguard${{WG_IDX}}":{{"description":"HydraVPN","up":true,"address":[{{"ip":"{client_ip}","mask":"255.255.255.255"}}],"wireguard":{{"private-key":"{priv_key_sh}","peer":[{{"public-key":"{pub_key_sh}","endpoint":{{"address":"{vps_host}","port":{port}}},"allowed-ips":[{{"ip":"0.0.0.0","mask":"0.0.0.0"}}],"persistent-keepalive":25}}]}}}}}}}}
+{{"interface":{{"Wireguard${{WG_IDX}}":{{"description":"HydraVPN","up":true,"address":[{{"ip":"{client_ip}","mask":"255.255.255.255"}}],"wireguard":{{"private-key":"{priv_key_sh}","peer":[{{"public-key":"{pub_key_sh}","endpoint":{{"address":"{vps_host}","port":{port}}},"allowed-address":[{{"ip":"0.0.0.0","mask":"0.0.0.0"}}],"keepalive":25}}]}}}}}}}}
 RCIEOF
   echo "RCI JSON: $(cat /tmp/wg_rci.json)"
 
   CFG=$(curl -s -b /tmp/rci.jar -X POST http://localhost/rci/ \\
     -H 'Content-Type: application/json' \\
     --data-binary @/tmp/wg_rci.json)
-  echo "RCI Config response: $CFG"
+  echo "RCI response: $CFG"
 
-  # Сохранить конфиг
   curl -s -b /tmp/rci.jar -X POST http://localhost/rci/ \\
     -H 'Content-Type: application/json' \\
     -d '{{"system":{{"configuration":{{"save":true}}}}}}' >/dev/null
 
-  # Проверить, что интерфейс реально создался
   sleep 2
   if wg show nwg${{WG_IDX}} >/dev/null 2>&1; then
     DONE=1
-    echo "OK: Wireguard${{WG_IDX}} (nwg${{WG_IDX}}) создан в Keenetic — виден в UI"
-  elif printf '%s' "$CFG" | grep -v '"error"' | grep -q '"Wireguard'; then
-    DONE=1
-    echo "OK: RCI принял конфиг Wireguard${{WG_IDX}}"
+    echo "OK: Wireguard${{WG_IDX}} (nwg${{WG_IDX}}) создан — виден в UI"
   else
-    echo "RCI не создал интерфейс"
+    echo "RCI не создал интерфейс. Смотри response выше."
   fi
 fi
 rm -f /tmp/rci.jar /tmp/wg_rci.json 2>/dev/null
