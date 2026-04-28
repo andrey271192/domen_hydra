@@ -757,7 +757,7 @@ DONE=0
 RCI_BASE=""
 AUTH=""
 # Собираем все локальные IPv4 (кроме 127.x) из ip addr
-_local_ips=$(ip addr show 2>/dev/null | grep 'inet ' | awk '{{print $2}}' | cut -d/ -f1 | grep -v '^127\.')
+_local_ips=$(ip addr show 2>/dev/null | grep 'inet ' | awk '{{print $2}}' | cut -d/ -f1 | grep -v '^127\\.')
 for _ip in 127.0.0.1 $_local_ips; do
   _auth=$(curl -s --connect-timeout 2 "http://$_ip/auth" 2>/dev/null)
   if printf '%s' "$_auth" | grep -q '"realm"'; then
