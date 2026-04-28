@@ -710,27 +710,10 @@ async def wg_deploy(name: str, x_admin_password: str = Header("")):
     port = srv.get("port", 51820)
     client_ip = peer["ip"]
 
-    # RCI template JSON — WireguardIDX is a placeholder replaced by sed at runtime
-    template_rci = _json.dumps({
-        "interface": {
-            "WireguardIDX": {
-                "description": "HydraVPN",
-                "up": True,
-                "address": [{"ip": client_ip, "mask": "255.255.255.255"}],
-                "wireguard": {
-                    "private-key": priv_key,
-                    "peer": [{
-                        "public-key": pub_key,
-                        "endpoint": {"address": vps_host, "port": port},
-                        "allowed-ips": [{"ip": "0.0.0.0", "mask": "0.0.0.0"}],
-                        "persistent-keepalive": 25,
-                    }],
-                },
-            }
-        }
-    })
-    rci_save   = '{"system":{"configuration":{"save":true}}}'
     router_pass = (rcfg.get("password") or config.SSH_PASS).replace("'", r"'\''")
+    # Экранируем для встраивания в heredoc shell-скрипта (одинарные кавычки уже обработаны выше)
+    priv_key_sh = priv_key.replace("\\", "\\\\")
+    pub_key_sh  = pub_key.replace("\\", "\\\\")
 
     script = f"""\
 echo '[1/3] Установка wireguard-tools...'
@@ -740,24 +723,15 @@ command -v wg >/dev/null 2>&1 || {{ echo 'ОШИБКА: wg не установл
 
 echo '[2/3] Запись конфига...'
 mkdir -p /opt/etc/wireguard
-cat > /opt/etc/wireguard/wg0.conf << 'WGEOF'
-{wg_conf}WGEOF
-chmod 600 /opt/etc/wireguard/wg0.conf
-printf '%s\\n' '{priv_key}' > /opt/etc/wireguard/wg0.key
+printf '%s\\n' '{priv_key_sh}' > /opt/etc/wireguard/wg0.key
 chmod 600 /opt/etc/wireguard/wg0.key
 
-# RCI шаблон (WireguardIDX заменяется sed'ом ниже)
-cat > /tmp/wg_tmpl.json << 'TMPLEOF'
-{template_rci}
-TMPLEOF
-
-echo '[3/3] Настройка WireGuard...'
+echo '[3/3] Настройка WireGuard через Keenetic RCI...'
 DONE=0
 
-# === Keenetic RCI API (нативная интеграция) ===
-# /auth возвращает JSON с realm и challenge в теле ответа
+# === Keenetic RCI API (нативная интеграция, интерфейс виден в UI) ===
 AUTH=$(curl -s http://localhost/auth 2>/dev/null)
-echo "Auth: $AUTH"
+echo "Auth response: $AUTH"
 REALM=$(printf '%s' "$AUTH" | grep -o '"realm":"[^"]*"' | cut -d'"' -f4)
 CHAL=$(printf '%s' "$AUTH" | grep -o '"challenge":"[^"]*"' | cut -d'"' -f4)
 echo "Realm=[$REALM] Challenge=[$CHAL]"
@@ -770,42 +744,57 @@ if [ -n "$REALM" ] && [ -n "$CHAL" ]; then
     -d '{{"login":"admin","password":"'"$RESP"'"}}')
   echo "Login: $LOGIN"
 
-  # Найти свободный слот: проверяем nwg50, nwg51... (nwgN = WireguardN)
-  WG_IDX=50
-  while wg show nwg${{WG_IDX}} >/dev/null 2>&1; do
-    echo "nwg${{WG_IDX}} занят, пробуем nwg$((WG_IDX+1))..."
-    WG_IDX=$((WG_IDX+1))
+  # Найти следующий свободный последовательный индекс WireGuard
+  # Keenetic требует последовательную нумерацию: 0,1,2...
+  # nwgN = WireguardN в RCI
+  MAX_WG=-1
+  for i in $(seq 0 20); do
+    wg show nwg$i >/dev/null 2>&1 && MAX_WG=$i
   done
-  echo "Используем Wireguard${{WG_IDX}} (nwg${{WG_IDX}})"
+  WG_IDX=$((MAX_WG + 1))
+  echo "Существующие интерфейсы до nwg${{MAX_WG}}, создаём Wireguard${{WG_IDX}} (nwg${{WG_IDX}})"
 
-  sed "s/WireguardIDX/Wireguard${{WG_IDX}}/" /tmp/wg_tmpl.json > /tmp/wg_rci.json
+  # JSON для RCI: создать WireGuard интерфейс
+  cat > /tmp/wg_rci.json << RCIEOF
+{{"interface":{{"Wireguard${{WG_IDX}}":{{"description":"HydraVPN","up":true,"address":[{{"ip":"{client_ip}","mask":"255.255.255.255"}}],"wireguard":{{"private-key":"{priv_key_sh}","peer":[{{"public-key":"{pub_key_sh}","endpoint":{{"address":"{vps_host}","port":{port}}},"allowed-ips":[{{"ip":"0.0.0.0","mask":"0.0.0.0"}}],"persistent-keepalive":25}}]}}}}}}}}
+RCIEOF
+  echo "RCI JSON: $(cat /tmp/wg_rci.json)"
+
   CFG=$(curl -s -b /tmp/rci.jar -X POST http://localhost/rci/ \\
     -H 'Content-Type: application/json' \\
     --data-binary @/tmp/wg_rci.json)
-  echo "Config: $CFG"
+  echo "RCI Config response: $CFG"
 
-  if ! printf '%s' "$CFG" | grep -qi '"error"\\|"code":-'; then
-    curl -s -b /tmp/rci.jar -X POST http://localhost/rci/ \\
-      -H 'Content-Type: application/json' \\
-      -d '{rci_save}' >/dev/null
+  # Сохранить конфиг
+  curl -s -b /tmp/rci.jar -X POST http://localhost/rci/ \\
+    -H 'Content-Type: application/json' \\
+    -d '{{"system":{{"configuration":{{"save":true}}}}}}' >/dev/null
+
+  # Проверить, что интерфейс реально создался
+  sleep 2
+  if wg show nwg${{WG_IDX}} >/dev/null 2>&1; then
     DONE=1
-    echo "OK: Wireguard${{WG_IDX}} (nwg${{WG_IDX}}) создан в Keenetic"
+    echo "OK: Wireguard${{WG_IDX}} (nwg${{WG_IDX}}) создан в Keenetic — виден в UI"
+  elif printf '%s' "$CFG" | grep -v '"error"' | grep -q '"Wireguard'; then
+    DONE=1
+    echo "OK: RCI принял конфиг Wireguard${{WG_IDX}}"
   else
-    echo "RCI вернул ошибку"
+    echo "RCI не создал интерфейс"
   fi
 fi
-rm -f /tmp/rci.jar /tmp/wg_rci.json /tmp/wg_tmpl.json 2>/dev/null
+rm -f /tmp/rci.jar /tmp/wg_rci.json 2>/dev/null
 
-# === Fallback: wg + ip (nwg50+, без UI интеграции) ===
+# === Fallback: wg + ip (nwg50+, без UI) ===
 if [ "$DONE" = "0" ]; then
-  echo 'RCI не сработал → wg + ip...'
+  echo 'RCI не сработал → fallback wg + ip (nwg50+)...'
   WG_IDX=50
   while wg show nwg${{WG_IDX}} >/dev/null 2>&1; do
     WG_IDX=$((WG_IDX+1))
   done
+  echo "Fallback: создаём nwg${{WG_IDX}}"
   ip link add nwg${{WG_IDX}} type wireguard 2>/dev/null || true
   wg set nwg${{WG_IDX}} private-key /opt/etc/wireguard/wg0.key \\
-    peer '{pub_key}' allowed-ips 0.0.0.0/0 \\
+    peer '{pub_key_sh}' allowed-ips 0.0.0.0/0 \\
     endpoint '{vps_host}:{port}' persistent-keepalive 25 && DONE=1 || true
   ip addr add '{client_ip}/32' dev nwg${{WG_IDX}} 2>/dev/null || true
   ip link set up dev nwg${{WG_IDX}} 2>/dev/null || true
@@ -816,7 +805,7 @@ case "\\$1" in
   start)
     ip link show nwg${{WG_IDX}} >/dev/null 2>&1 || ip link add nwg${{WG_IDX}} type wireguard 2>/dev/null || exit 0
     wg set nwg${{WG_IDX}} private-key /opt/etc/wireguard/wg0.key \\
-      peer '{pub_key}' allowed-ips 0.0.0.0/0 \\
+      peer '{pub_key_sh}' allowed-ips 0.0.0.0/0 \\
       endpoint '{vps_host}:{port}' persistent-keepalive 25
     ip addr add '{client_ip}/32' dev nwg${{WG_IDX}} 2>/dev/null || true
     ip link set up dev nwg${{WG_IDX}}
@@ -826,13 +815,13 @@ case "\\$1" in
 esac
 INITEOF
   chmod +x /opt/etc/init.d/S50hydravpn
-  [ "$DONE" = "1" ] && echo "OK: nwg${{WG_IDX}} поднят (VPN работает, UI: Загрузить из файла /opt/etc/wireguard/wg0.conf)"
+  [ "$DONE" = "1" ] && echo "OK (fallback): nwg${{WG_IDX}} активен. Добавь в Keenetic вручную через UI."
 fi
 
 [ "$DONE" = "0" ] && {{ echo 'ОШИБКА: VPN не удалось настроить'; exit 1; }}
 echo '=== OK ==='
-echo 'VPN IP: {client_ip}'
-wg show 2>/dev/null | head -12 || true
+echo "VPN IP: {client_ip}"
+wg show 2>/dev/null || true
 """
 
     rc, out, err = await _ssh_on_router(rcfg, script, timeout=120)
