@@ -484,6 +484,11 @@ esac
 INITEOF
 chmod +x /opt/etc/init.d/S99hydra_tun
 
+# Cron-watchdog: каждую минуту проверяет autossh и перезапускает если упал
+CRON_JOB="* * * * * killall -0 autossh 2>/dev/null || /opt/etc/init.d/S99hydra_tun start"
+( crontab -l 2>/dev/null | grep -v 'S99hydra_tun'; echo "$CRON_JOB" ) | crontab -
+echo 'Watchdog cron установлен'
+
 echo '[4/4] Запуск...'
 killall autossh 2>/dev/null || true
 sleep 1
@@ -892,6 +897,9 @@ rm -f /opt/bin/hydra_tun && echo 'hydra_tun удалён' || true
 rm -f /opt/etc/hydra_tk && echo 'SSH-ключ туннеля удалён' || true
 rm -f /opt/etc/wireguard/wg0.conf /opt/etc/wireguard/wg0.key 2>/dev/null && echo 'WireGuard конфиг удалён' || true
 rm -f /tmp/hydra_tun.log /tmp/rci.jar /tmp/wg_rci.json 2>/dev/null || true
+
+# Удалить watchdog из crontab
+( crontab -l 2>/dev/null | grep -v 'S99hydra_tun' ) | crontab - && echo 'Watchdog cron удалён' || true
 
 for i in $(seq 50 70); do
   ip link show nwg$i >/dev/null 2>&1 && ip link delete nwg$i && echo "nwg$i удалён"
