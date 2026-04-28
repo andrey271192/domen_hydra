@@ -753,27 +753,20 @@ echo '[3/3] Настройка WireGuard через Keenetic RCI...'
 DONE=0
 
 # === Keenetic RCI API (нативная интеграция, интерфейс виден в UI) ===
-# Keenetic слушает на LAN IP, не на localhost — перебираем варианты
+# Keenetic слушает на LAN IP роутера — определяем его динамически
 RCI_BASE=""
-for _url in "http://127.0.0.1" "http://localhost" "http://192.168.1.1"; do
-  _auth=$(curl -s --connect-timeout 2 "$_url/auth" 2>/dev/null)
+AUTH=""
+# Собираем все локальные IPv4 (кроме 127.x) из ip addr
+_local_ips=$(ip addr show 2>/dev/null | grep 'inet ' | awk '{{print $2}}' | cut -d/ -f1 | grep -v '^127\.')
+for _ip in 127.0.0.1 $_local_ips; do
+  _auth=$(curl -s --connect-timeout 2 "http://$_ip/auth" 2>/dev/null)
   if printf '%s' "$_auth" | grep -q '"realm"'; then
-    RCI_BASE="$_url"
+    RCI_BASE="http://$_ip"
     AUTH="$_auth"
+    echo "RCI найден на http://$_ip"
     break
   fi
 done
-# Если стандартные IP не помогли — пробуем адрес br0 (LAN-интерфейс роутера)
-if [ -z "$RCI_BASE" ]; then
-  _lanip=$(ip addr show br0 2>/dev/null | grep 'inet ' | awk '{{print $2}}' | cut -d/ -f1 | head -1)
-  if [ -n "$_lanip" ]; then
-    _auth=$(curl -s --connect-timeout 2 "http://$_lanip/auth" 2>/dev/null)
-    if printf '%s' "$_auth" | grep -q '"realm"'; then
-      RCI_BASE="http://$_lanip"
-      AUTH="$_auth"
-    fi
-  fi
-fi
 echo "RCI base: [$RCI_BASE]  Auth: $AUTH"
 REALM=$(printf '%s' "$AUTH" | grep -o '"realm":"[^"]*"' | cut -d'"' -f4)
 CHAL=$(printf '%s' "$AUTH" | grep -o '"challenge":"[^"]*"' | cut -d'"' -f4)
