@@ -710,35 +710,27 @@ async def wg_deploy(name: str, x_admin_password: str = Header("")):
     port = srv.get("port", 51820)
     client_ip = peer["ip"]
 
-    # Build RCI payloads in Python (safe JSON, no shell escaping issues)
-    def _rci_iface(idx: int) -> str:
-        return _json.dumps({
-            "interface": {
-                f"Wireguard{idx}": {
-                    "description": "HydraVPN",
-                    "up": True,
-                    "address": [{"ip": client_ip, "mask": "255.255.255.255"}],
-                    "wireguard": {
-                        "private-key": priv_key,
-                        "peer": [{
-                            "public-key": pub_key,
-                            "endpoint": {"address": vps_host, "port": port},
-                            "allowed-ips": [{"ip": "0.0.0.0", "mask": "0.0.0.0"}],
-                            "persistent-keepalive": 25,
-                        }],
-                    },
-                }
+    # RCI template JSON — WireguardIDX is a placeholder replaced by sed at runtime
+    template_rci = _json.dumps({
+        "interface": {
+            "WireguardIDX": {
+                "description": "HydraVPN",
+                "up": True,
+                "address": [{"ip": client_ip, "mask": "255.255.255.255"}],
+                "wireguard": {
+                    "private-key": priv_key,
+                    "peer": [{
+                        "public-key": pub_key,
+                        "endpoint": {"address": vps_host, "port": port},
+                        "allowed-ips": [{"ip": "0.0.0.0", "mask": "0.0.0.0"}],
+                        "persistent-keepalive": 25,
+                    }],
+                },
             }
-        })
-
-    rci_jsons = {i: _rci_iface(i) for i in range(6)}
-    rci_save  = '{"system":{"configuration":{"save":true}}}'
+        }
+    })
+    rci_save   = '{"system":{"configuration":{"save":true}}}'
     router_pass = (rcfg.get("password") or config.SSH_PASS).replace("'", r"'\''")
-
-    # Embed JSON payloads into the script as heredoc files
-    rci_files = ""
-    for i, payload in rci_jsons.items():
-        rci_files += f"cat > /tmp/wg_rci_{i}.json << 'RCI{i}EOF'\n{payload}\nRCI{i}EOF\n"
 
     script = f"""\
 echo '[1/3] Установка wireguard-tools...'
@@ -754,31 +746,21 @@ chmod 600 /opt/etc/wireguard/wg0.conf
 printf '%s\\n' '{priv_key}' > /opt/etc/wireguard/wg0.key
 chmod 600 /opt/etc/wireguard/wg0.key
 
-cat > /opt/etc/init.d/S50wg0 << 'INITEOF'
-#!/bin/sh
-case "$1" in
-  start)
-    ip link show wg0 >/dev/null 2>&1 || ip link add wg0 type wireguard 2>/dev/null || exit 0
-    wg set wg0 private-key /opt/etc/wireguard/wg0.key \\
-      peer '{pub_key}' allowed-ips 0.0.0.0/0 \\
-      endpoint '{vps_host}:{port}' persistent-keepalive 25
-    ip addr add '{client_ip}/32' dev wg0 2>/dev/null || true
-    ip link set up dev wg0
-    ;;
-  stop)  ip link set down dev wg0 2>/dev/null; ip link delete wg0 2>/dev/null ;;
-  restart) $0 stop; sleep 1; $0 start ;;
-esac
-INITEOF
-chmod +x /opt/etc/init.d/S50wg0
+# RCI шаблон (WireguardIDX заменяется sed'ом ниже)
+cat > /tmp/wg_tmpl.json << 'TMPLEOF'
+{template_rci}
+TMPLEOF
 
 echo '[3/3] Настройка WireGuard...'
 DONE=0
 
-# === Вариант 1: Keenetic RCI HTTP API (нативно → появится в Другие подключения) ===
-{rci_files}
-AUTH_HDR=$(curl -si http://localhost/auth 2>/dev/null)
-REALM=$(printf '%s' "$AUTH_HDR" | grep -i 'x-ndm-realm' | tail -1 | tr -d '\\r\\n' | awk -F': ' '{{print $2}}')
-CHAL=$(printf '%s' "$AUTH_HDR" | grep -i 'x-ndm-challenge' | tail -1 | tr -d '\\r\\n' | awk -F': ' '{{print $2}}')
+# === Keenetic RCI API (нативная интеграция) ===
+# /auth возвращает JSON с realm и challenge в теле ответа
+AUTH=$(curl -s http://localhost/auth 2>/dev/null)
+echo "Auth: $AUTH"
+REALM=$(printf '%s' "$AUTH" | grep -o '"realm":"[^"]*"' | cut -d'"' -f4)
+CHAL=$(printf '%s' "$AUTH" | grep -o '"challenge":"[^"]*"' | cut -d'"' -f4)
+echo "Realm=[$REALM] Challenge=[$CHAL]"
 
 if [ -n "$REALM" ] && [ -n "$CHAL" ]; then
   HASH=$(printf 'admin:%s:{router_pass}' "$REALM" | md5sum | cut -c1-32)
@@ -786,51 +768,71 @@ if [ -n "$REALM" ] && [ -n "$CHAL" ]; then
   LOGIN=$(curl -s -c /tmp/rci.jar http://localhost/auth \\
     -H 'Content-Type: application/json' \\
     -d '{{"login":"admin","password":"'"$RESP"'"}}')
-  echo "RCI auth: $LOGIN"
+  echo "Login: $LOGIN"
 
-  if printf '%s' "$LOGIN" | grep -qi 'success\\|true'; then
-    for WG_IDX in 2 3 4 5 0 1; do
-      IFACE=$(curl -s -b /tmp/rci.jar \\
-        "http://localhost/rci/show/interface/Wireguard${{WG_IDX}}/" 2>/dev/null)
-      if printf '%s' "$IFACE" | grep -q '"description"\\|"type"'; then
-        echo "Wireguard${{WG_IDX}} занят, пробуем следующий..."
-        continue
-      fi
-      CFG=$(curl -s -b /tmp/rci.jar -X POST http://localhost/rci/ \\
-        -H 'Content-Type: application/json' \\
-        --data-binary @/tmp/wg_rci_${{WG_IDX}}.json)
-      echo "RCI config Wireguard${{WG_IDX}}: $CFG"
-      curl -s -b /tmp/rci.jar -X POST http://localhost/rci/ \\
-        -H 'Content-Type: application/json' \\
-        -d '{rci_save}' >/dev/null
-      DONE=1
-      echo "OK: Wireguard${{WG_IDX}} создан в Keenetic (проверь Другие подключения)"
-      break
-    done
+  # Найти свободный слот: проверяем nwg50, nwg51... (nwgN = WireguardN)
+  WG_IDX=50
+  while wg show nwg${{WG_IDX}} >/dev/null 2>&1; do
+    echo "nwg${{WG_IDX}} занят, пробуем nwg$((WG_IDX+1))..."
+    WG_IDX=$((WG_IDX+1))
+  done
+  echo "Используем Wireguard${{WG_IDX}} (nwg${{WG_IDX}})"
+
+  sed "s/WireguardIDX/Wireguard${{WG_IDX}}/" /tmp/wg_tmpl.json > /tmp/wg_rci.json
+  CFG=$(curl -s -b /tmp/rci.jar -X POST http://localhost/rci/ \\
+    -H 'Content-Type: application/json' \\
+    --data-binary @/tmp/wg_rci.json)
+  echo "Config: $CFG"
+
+  if ! printf '%s' "$CFG" | grep -qi '"error"\\|"code":-'; then
+    curl -s -b /tmp/rci.jar -X POST http://localhost/rci/ \\
+      -H 'Content-Type: application/json' \\
+      -d '{rci_save}' >/dev/null
+    DONE=1
+    echo "OK: Wireguard${{WG_IDX}} (nwg${{WG_IDX}}) создан в Keenetic"
+  else
+    echo "RCI вернул ошибку"
   fi
 fi
-rm -f /tmp/rci.jar /tmp/wg_rci_*.json 2>/dev/null
+rm -f /tmp/rci.jar /tmp/wg_rci.json /tmp/wg_tmpl.json 2>/dev/null
 
-# === Вариант 2: raw wg + ip (Entware wg0, без интеграции в UI) ===
+# === Fallback: wg + ip (nwg50+, без UI интеграции) ===
 if [ "$DONE" = "0" ]; then
-  echo 'RCI не сработал, используем wg + ip...'
-  ip link show wg0 >/dev/null 2>&1 || ip link add wg0 type wireguard 2>/dev/null || true
-  wg set wg0 private-key /opt/etc/wireguard/wg0.key \\
+  echo 'RCI не сработал → wg + ip...'
+  WG_IDX=50
+  while wg show nwg${{WG_IDX}} >/dev/null 2>&1; do
+    WG_IDX=$((WG_IDX+1))
+  done
+  ip link add nwg${{WG_IDX}} type wireguard 2>/dev/null || true
+  wg set nwg${{WG_IDX}} private-key /opt/etc/wireguard/wg0.key \\
     peer '{pub_key}' allowed-ips 0.0.0.0/0 \\
     endpoint '{vps_host}:{port}' persistent-keepalive 25 && DONE=1 || true
-  ip addr add '{client_ip}/32' dev wg0 2>/dev/null || true
-  ip link set up dev wg0 2>/dev/null || true
-  if [ "$DONE" = "1" ]; then
-    echo 'OK: wg0 поднят (VPN работает, но не виден в Keenetic UI)'
-    echo 'Чтобы добавить в UI вручную: Другие подключения → Загрузить из файла'
-    echo 'Файл конфига: /opt/etc/wireguard/wg0.conf'
-  fi
+  ip addr add '{client_ip}/32' dev nwg${{WG_IDX}} 2>/dev/null || true
+  ip link set up dev nwg${{WG_IDX}} 2>/dev/null || true
+
+  cat > /opt/etc/init.d/S50hydravpn << INITEOF
+#!/bin/sh
+case "\\$1" in
+  start)
+    ip link show nwg${{WG_IDX}} >/dev/null 2>&1 || ip link add nwg${{WG_IDX}} type wireguard 2>/dev/null || exit 0
+    wg set nwg${{WG_IDX}} private-key /opt/etc/wireguard/wg0.key \\
+      peer '{pub_key}' allowed-ips 0.0.0.0/0 \\
+      endpoint '{vps_host}:{port}' persistent-keepalive 25
+    ip addr add '{client_ip}/32' dev nwg${{WG_IDX}} 2>/dev/null || true
+    ip link set up dev nwg${{WG_IDX}}
+    ;;
+  stop)  ip link set down dev nwg${{WG_IDX}} 2>/dev/null; ip link delete nwg${{WG_IDX}} 2>/dev/null ;;
+  restart) \\$0 stop; sleep 1; \\$0 start ;;
+esac
+INITEOF
+  chmod +x /opt/etc/init.d/S50hydravpn
+  [ "$DONE" = "1" ] && echo "OK: nwg${{WG_IDX}} поднят (VPN работает, UI: Загрузить из файла /opt/etc/wireguard/wg0.conf)"
 fi
 
 [ "$DONE" = "0" ] && {{ echo 'ОШИБКА: VPN не удалось настроить'; exit 1; }}
 echo '=== OK ==='
 echo 'VPN IP: {client_ip}'
-wg show 2>/dev/null | head -10 || ip addr show wg0 2>/dev/null | grep inet || true
+wg show 2>/dev/null | head -12 || true
 """
 
     rc, out, err = await _ssh_on_router(rcfg, script, timeout=120)
