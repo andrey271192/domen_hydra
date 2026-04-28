@@ -208,6 +208,7 @@ input[type=text]:focus,input[type=password]:focus{border-color:var(--accent)}
       <input type="text" id="r-user" value="root" style="width:80px">
       <input type="password" id="r-pass" placeholder="SSH пароль" style="width:130px">
       <button class="btn btn-b" onclick="addRouter()">+ Добавить</button>
+      <button class="btn" style="background:var(--orange);color:#000" onclick="addAndTunnel()" title="Добавить роутер без IP и сразу открыть настройку тоннеля">⇄ Тоннель</button>
     </div>
     <div id="rm" class="msg"></div>
   </div>
@@ -215,6 +216,27 @@ input[type=text]:focus,input[type=password]:focus{border-color:var(--accent)}
     <h2 style="font-size:14px;font-weight:700;margin-bottom:14px">📋 Роутеры</h2>
     <div id="routers-list"><span style="color:var(--muted)">Загрузка...</span></div>
     <div id="router-ops-msg" class="push-log" style="display:none;margin-top:12px;max-height:200px"></div>
+  </div>
+</div>
+
+<!-- TUNNEL MODAL -->
+<div id="tun-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1000;align-items:center;justify-content:center">
+  <div style="background:var(--card);border-radius:18px;padding:24px;max-width:600px;width:94%;position:relative">
+    <button onclick="closeTunnel()" style="position:absolute;top:14px;right:16px;background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer">✕</button>
+    <h2 style="font-size:16px;font-weight:700;margin-bottom:4px">⇄ Обратный тоннель</h2>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:16px">Роутер: <b id="tun-rname"></b> · Порт VPS: <span id="tun-port" style="color:var(--green)">…</span></div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:8px">Скопируй команду и вставь в SSH-терминал <b>роутера</b> (там где <code style="background:var(--card2);padding:1px 4px;border-radius:4px">~ #</code>):</div>
+    <div style="position:relative;margin-bottom:12px">
+      <code id="tun-cmd" style="display:block;background:var(--card2);border-radius:10px;padding:12px;font-size:11px;word-break:break-all;min-height:40px;color:var(--text)">Генерирую...</code>
+      <button id="tun-copy-btn" onclick="copyTunnelCmd()" style="position:absolute;top:8px;right:8px;background:var(--accent);color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer">📋 Копировать</button>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <button class="btn btn-b" onclick="checkTunnelStatus()" style="font-size:12px">⟳ Проверить связь</button>
+      <span id="tun-status" style="font-size:12px;color:var(--muted)"></span>
+    </div>
+    <div style="margin-top:14px;font-size:11px;color:var(--muted)">
+      Если автозапуск не сработал — на роутере: <code style="background:var(--card2);padding:1px 4px;border-radius:4px">/opt/bin/hydra_tun</code> (вручную) · лог: <code style="background:var(--card2);padding:1px 4px;border-radius:4px">cat /tmp/hydra_tun.log</code>
+    </div>
   </div>
 </div>
 
@@ -363,6 +385,7 @@ function _escHtml(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(
     if(act==='test') await testRouter(n);
     else if(act==='pull') await pullRouter(n);
     else if(act==='push') await pushRouter(n);
+    else if(act==='tunnel') openTunnel(n);
     else if(act==='del') await delRouter(n);
   });
 })();
@@ -373,16 +396,25 @@ async function loadRouters(){
   el.innerHTML=Object.entries(R).map(([n,c])=>{
     const enc=encodeURIComponent(n);
     return `<div class="ri" style="align-items:flex-start;gap:10px">
-    <div style="flex:1;min-width:0"><span class="n">${_escHtml(n)}</span> <span style="color:var(--muted);font-size:12px">— ${_escHtml(c.ip||'—')}</span></div>
+    <div style="flex:1;min-width:0"><span class="n">${_escHtml(n)}</span> <span style="font-size:12px">${c.tunnel_port?`<span style="color:var(--green)">⇄ тоннель :${c.tunnel_port}</span>`:`<span style="color:var(--muted)">— ${_escHtml(c.ip||'—')}</span>`}</span></div>
     <div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end">
       <button type="button" class="btn btn-ghost" style="font-size:11px;padding:5px 10px" data-r-act="test" data-router="${enc}">🔌 Тест</button>
       <button type="button" class="btn btn-b" style="font-size:11px;padding:5px 10px" data-r-act="pull" data-router="${enc}">⬇ С роутера</button>
       <button type="button" class="btn btn-g" style="font-size:11px;padding:5px 10px" data-r-act="push" data-router="${enc}">📡 На роутер</button>
+      <button type="button" class="btn" style="background:var(--orange);color:#000;font-size:11px;padding:5px 10px" data-r-act="tunnel" data-router="${enc}">⇄</button>
       <button type="button" class="btn btn-r" style="font-size:11px;padding:5px 10px" data-r-act="del" data-router="${enc}">✗</button>
     </div></div>`;
   }).join('');
 }
 async function addRouter(){ const n=document.getElementById('r-name').value.trim(); if(!n)return; const b={ip:document.getElementById('r-ip').value.trim(),user:document.getElementById('r-user').value||'root',password:document.getElementById('r-pass').value}; try{ await fetch('/api/routers/'+encodeURIComponent(n),{method:'POST',headers:authHdr(),body:JSON.stringify(b)}); sm('rm','ok','✅ '+n); loadRouters(); }catch(e){sm('rm','err','❌ '+e)} }
+async function addAndTunnel(){
+  const n=document.getElementById('r-name').value.trim();
+  if(!n){sm('rm','err','❌ Введи имя роутера');return;}
+  const pwd=document.getElementById('r-pass').value;
+  if(!pwd){sm('rm','err','❌ Введи SSH пароль роутера');return;}
+  const b={ip:'',user:document.getElementById('r-user').value||'root',password:pwd};
+  try{ await fetch('/api/routers/'+encodeURIComponent(n),{method:'POST',headers:authHdr(),body:JSON.stringify(b)}); await loadRouters(); openTunnel(n); }catch(e){sm('rm','err','❌ '+e)}
+}
 async function delRouter(n){ if(!confirm('Удалить '+n+'?'))return; await fetch('/api/routers/'+encodeURIComponent(n),{method:'DELETE',headers:{'X-Admin-Password':getPass()}}); loadRouters(); }
 async function testRouter(n){
   const log=document.getElementById('router-ops-msg');
@@ -417,6 +449,52 @@ async function pushRouter(n){
     if(!r.ok){ log.textContent='❌ '+(Array.isArray(j.detail)?j.detail.map(x=>x.msg||x).join(' '):(j.detail||r.status)); return; }
     log.textContent=(j.ok?'✅':'❌')+' «'+n+'»: '+(j.msg||'');
   }catch(e){ log.textContent='❌ '+e; }
+}
+
+// ── TUNNEL ────────────────────────────────────────────────────────────────
+let _tunName='';
+function openTunnel(name){
+  _tunName=name;
+  document.getElementById('tun-rname').textContent=name;
+  document.getElementById('tun-port').textContent='…';
+  document.getElementById('tun-cmd').textContent='Генерирую команду...';
+  document.getElementById('tun-status').textContent='';
+  document.getElementById('tun-copy-btn').textContent='📋 Копировать';
+  document.getElementById('tun-modal').style.display='flex';
+  getTunnelCmd(name);
+}
+function closeTunnel(){ document.getElementById('tun-modal').style.display='none'; }
+async function getTunnelCmd(name){
+  const el=document.getElementById('tun-cmd');
+  try{
+    const r=await fetch('/api/routers/'+encodeURIComponent(name)+'/tunnel-cmd',{headers:{'X-Admin-Password':getPass()}});
+    const j=await r.json();
+    if(!r.ok){el.textContent='❌ '+(j.detail||'Ошибка'); return;}
+    el.textContent=j.cmd;
+    document.getElementById('tun-port').textContent=j.tunnel_port;
+  }catch(e){el.textContent='❌ '+e;}
+}
+function copyTunnelCmd(){
+  const el=document.getElementById('tun-cmd');
+  const btn=document.getElementById('tun-copy-btn');
+  const text=el.textContent;
+  const done=()=>{btn.textContent='✓ Скопировано'; setTimeout(()=>btn.textContent='📋 Копировать',2000);};
+  const fail=()=>{
+    const range=document.createRange(); range.selectNodeContents(el);
+    const sel=window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+    try{document.execCommand('copy');done();}catch{btn.textContent='Выдели текст → Cmd/Ctrl+C';}
+  };
+  if(navigator.clipboard){navigator.clipboard.writeText(text).then(done).catch(fail);}else{fail();}
+}
+async function checkTunnelStatus(){
+  const el=document.getElementById('tun-status');
+  el.textContent='Проверяю...'; el.style.color='var(--muted)';
+  try{
+    const r=await fetch('/api/routers/'+encodeURIComponent(_tunName)+'/tunnel-status',{headers:{'X-Admin-Password':getPass()}});
+    const j=await r.json();
+    el.textContent=j.active?'✅ Активен (порт '+j.tunnel_port+')':'❌ Не активен';
+    el.style.color=j.active?'var(--green)':'var(--red)';
+  }catch(e){el.textContent='❌ '+e; el.style.color='var(--red)';}
 }
 
 // ── SETTINGS ──────────────────────────────────────────────────────────────
