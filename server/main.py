@@ -302,6 +302,26 @@ async def delete_router(name: str, x_admin_password: str = Header("")):
 
 # ── Tunnel helpers ────────────────────────────────────────────────────────────
 
+def _kill_tunnel_port(port: int) -> None:
+    """Убить процессы, удерживающие reverse-tunnel порт на VPS (127.0.0.1:PORT)."""
+    try:
+        # fuser -k работает на большинстве Linux
+        subprocess.run(["fuser", "-k", f"{port}/tcp"],
+                       capture_output=True, timeout=5)
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+    try:
+        # Fallback: ss + kill
+        r = subprocess.run(
+            ["bash", "-c",
+             f"ss -tlnp 'sport = :{port}' | grep -oP 'pid=\\K[0-9]+' | xargs -r kill"],
+            capture_output=True, timeout=5,
+        )
+        _ = r  # noqa
+    except Exception:
+        pass
+
+
 def _gen_ed25519_keypair(name: str) -> tuple[str, str]:
     """Генерировать ed25519 keypair на VPS через ssh-keygen. Возвращает (private_pem, public_openssh)."""
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -352,6 +372,8 @@ async def tunnel_cmd(name: str, x_admin_password: str = Header("")):
     # Порт
     if rcfg.get("tunnel_port"):
         port = int(rcfg["tunnel_port"])
+        # Убить старые зависшие соединения на этом порту (VPS-сторона)
+        await asyncio.to_thread(_kill_tunnel_port, port)
     else:
         used = {int(v.get("tunnel_port")) for v in R.values() if v.get("tunnel_port")}
         port = config.TUNNEL_PORT_START
