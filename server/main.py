@@ -834,3 +834,40 @@ async def wg_remove_peer(name: str, x_admin_password: str = Header("")):
     _save_wg(data)
     await asyncio.to_thread(_wg_reload, _wg_server_conf(data))
     return {"ok": True}
+
+
+@app.post("/api/routers/{name}/wireguard/uninstall")
+async def wg_uninstall(name: str, x_admin_password: str = Header("")):
+    """Удалить всё установленное сервером с роутера через SSH."""
+    _chk(x_admin_password)
+    rcfg = _get_router_cfg(name)
+    script = """\
+echo '=== Удаление HydraVPN с роутера ==='
+
+killall autossh 2>/dev/null && echo 'autossh остановлен' || true
+
+if [ -f /opt/etc/init.d/S50hydravpn ]; then
+  /opt/etc/init.d/S50hydravpn stop 2>/dev/null || true
+  rm -f /opt/etc/init.d/S50hydravpn && echo 'S50hydravpn удалён'
+fi
+
+if [ -f /opt/etc/init.d/S99hydra_tun ]; then
+  /opt/etc/init.d/S99hydra_tun stop 2>/dev/null || true
+  rm -f /opt/etc/init.d/S99hydra_tun && echo 'S99hydra_tun удалён'
+fi
+
+rm -f /opt/bin/hydra_tun && echo 'hydra_tun удалён' || true
+rm -f /opt/etc/hydra_tk && echo 'SSH-ключ туннеля удалён' || true
+rm -f /opt/etc/wireguard/wg0.conf /opt/etc/wireguard/wg0.key 2>/dev/null && echo 'WireGuard конфиг удалён' || true
+rm -f /tmp/hydra_tun.log /tmp/rci.jar /tmp/wg_rci.json 2>/dev/null || true
+
+for i in $(seq 50 70); do
+  ip link show nwg$i >/dev/null 2>&1 && ip link delete nwg$i && echo "nwg$i удалён"
+done
+
+echo '=== OK: всё удалено ==='
+echo 'Нативные WireGuard-интерфейсы (peer-1, HydraVPN...) удали вручную:'
+echo '  Интернет → Другие подключения → WireGuard → Удалить подключение'
+"""
+    rc, out, err = await _ssh_on_router(rcfg, script, timeout=60)
+    return {"ok": rc == 0, "output": (out + err)[:1500]}

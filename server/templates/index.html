@@ -601,7 +601,8 @@ async function renderWgRouters(){
           ? `<button class="btn btn-b" style="font-size:11px" onclick="wgAddPeer('${name}')">+ В VPN</button>`
           : `<button class="btn btn-g" style="font-size:11px" onclick="wgDeploy('${name}')">📡 Установить на роутер</button>
              <button class="btn btn-ghost" style="font-size:11px" onclick="wgShowRouterConfig('${name}')">📄 Конфиг</button>
-             <button class="btn btn-r" style="font-size:11px" onclick="wgRemovePeer('${name}')">✕ Убрать</button>`}
+             <button class="btn btn-r" style="font-size:11px" onclick="wgUninstall('${name}')" title="Удалить всё установленное с роутера через SSH">🗑 Снести с роутера</button>
+             <button class="btn btn-r" style="font-size:11px;opacity:.7" onclick="wgRemovePeer('${name}')">✕ Убрать из VPN</button>`}
       </div>
     </div>`;
   }).join('');
@@ -628,11 +629,26 @@ async function wgAddPeer(name){
 }
 
 async function wgRemovePeer(name){
-  if(!confirm(`Удалить ${name} из WireGuard VPN?`)) return;
+  if(!confirm(`Убрать ${name} из VPN (только из списка, файлы на роутере не трогаем)?`)) return;
   try {
     await fetch(`/api/routers/${encodeURIComponent(name)}/wireguard`, {method:'DELETE', headers: authHdr()});
     await loadWg();
   } catch(e){ alert('Ошибка: '+e); }
+}
+
+async function wgUninstall(name){
+  if(!confirm(`Удалить всё установленное сервером с роутера «${name}» через SSH?\n\n• autossh туннель\n• WireGuard файлы и init.d скрипты\n• nwg50+ интерфейсы\n\nНативные WireGuard-интерфейсы (peer-1, HydraVPN) надо удалить вручную в Keenetic UI.`)) return;
+  const log = document.getElementById('wg-ops-log');
+  log.style.display = 'block';
+  log.textContent = `Удаляю VPN/туннель с роутера «${name}»...\n`;
+  try {
+    const r = await fetch(`/api/routers/${encodeURIComponent(name)}/wireguard/uninstall`, {method:'POST', headers: authHdr()});
+    const d = await r.json();
+    log.textContent += d.output || '';
+    if(!d.ok) log.textContent += '\n❌ Завершилось с ошибкой';
+    else log.textContent += '\n✅ Готово';
+    log.scrollTop = log.scrollHeight;
+  } catch(e){ log.textContent += '\nОшибка: '+e; }
 }
 
 async function wgDeploy(name){
