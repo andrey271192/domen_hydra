@@ -460,3 +460,13 @@ ss -tlnp | grep 2010
 - [keenetic-dns-routes](https://github.com/andrey271192/keenetic-dns-routes) — встроенная DNS-маршрутизация без Neo
 - [keenetic-unified](https://github.com/andrey271192/keenetic-unified) — Neo + дашборд + мониторинг
 - [Keenetic SSH](https://github.com/andrey271192/Keenetic_SSH) — прямой SSH (нужен белый IP)
+
+---
+
+## Поддержать проект
+
+Если проект оказался полезным — буду рад поддержке. Это помогает развивать и поддерживать его дальше.
+
+- [Boosty](https://boosty.to/andrey27/donate)
+- [Ozon СБП](https://finance.ozon.ru/apps/sbp/ozonbankpay/019dc200-2a5d-7931-a619-782d285f6798)
+- Telegram: [@Iot_andrey](https://t.me/Iot_andrey) — вопросы, идеи, обратная связь
