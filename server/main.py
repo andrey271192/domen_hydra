@@ -753,23 +753,39 @@ echo '[3/3] Настройка WireGuard через Keenetic RCI...'
 DONE=0
 
 # === Keenetic RCI API (нативная интеграция, интерфейс виден в UI) ===
-AUTH=$(curl -s http://localhost/auth 2>/dev/null)
-echo "Auth response: $AUTH"
+# Keenetic слушает на LAN IP, не на localhost — перебираем варианты
+RCI_BASE=""
+for _url in "http://127.0.0.1" "http://localhost" "http://192.168.1.1"; do
+  _auth=$(curl -s --connect-timeout 2 "$_url/auth" 2>/dev/null)
+  if printf '%s' "$_auth" | grep -q '"realm"'; then
+    RCI_BASE="$_url"
+    AUTH="$_auth"
+    break
+  fi
+done
+# Если стандартные IP не помогли — пробуем адрес br0 (LAN-интерфейс роутера)
+if [ -z "$RCI_BASE" ]; then
+  _lanip=$(ip addr show br0 2>/dev/null | grep 'inet ' | awk '{{print $2}}' | cut -d/ -f1 | head -1)
+  if [ -n "$_lanip" ]; then
+    _auth=$(curl -s --connect-timeout 2 "http://$_lanip/auth" 2>/dev/null)
+    if printf '%s' "$_auth" | grep -q '"realm"'; then
+      RCI_BASE="http://$_lanip"
+      AUTH="$_auth"
+    fi
+  fi
+fi
+echo "RCI base: [$RCI_BASE]  Auth: $AUTH"
 REALM=$(printf '%s' "$AUTH" | grep -o '"realm":"[^"]*"' | cut -d'"' -f4)
 CHAL=$(printf '%s' "$AUTH" | grep -o '"challenge":"[^"]*"' | cut -d'"' -f4)
 echo "Realm=[$REALM] Challenge=[$CHAL]"
 
-if [ -n "$REALM" ] && [ -n "$CHAL" ]; then
+if [ -n "$REALM" ] && [ -n "$CHAL" ] && [ -n "$RCI_BASE" ]; then
   HASH=$(printf 'admin:%s:{router_pass}' "$REALM" | md5sum | cut -c1-32)
   RESP=$(printf '%s%s' "$HASH" "$CHAL" | md5sum | cut -c1-32)
-  LOGIN=$(curl -s -c /tmp/rci.jar http://localhost/auth \\
+  LOGIN=$(curl -s -c /tmp/rci.jar "$RCI_BASE/auth" \\
     -H 'Content-Type: application/json' \\
     -d '{{"login":"admin","password":"'"$RESP"'"}}')
   echo "Login: $LOGIN"
-
-  echo "=== Существующий Wireguard0 (для проверки формата) ==="
-  curl -s -b /tmp/rci.jar 'http://localhost/rci/interface/Wireguard0' 2>/dev/null | head -c 800
-  echo ""
 
   # Найти следующий свободный последовательный индекс WireGuard
   MAX_WG=-1
@@ -785,12 +801,12 @@ if [ -n "$REALM" ] && [ -n "$CHAL" ]; then
 RCIEOF
   echo "RCI JSON: $(cat /tmp/wg_rci.json)"
 
-  CFG=$(curl -s -b /tmp/rci.jar -X POST http://localhost/rci/ \\
+  CFG=$(curl -s -b /tmp/rci.jar -X POST "$RCI_BASE/rci/" \\
     -H 'Content-Type: application/json' \\
     --data-binary @/tmp/wg_rci.json)
   echo "RCI response: $CFG"
 
-  curl -s -b /tmp/rci.jar -X POST http://localhost/rci/ \\
+  curl -s -b /tmp/rci.jar -X POST "$RCI_BASE/rci/" \\
     -H 'Content-Type: application/json' \\
     -d '{{"system":{{"configuration":{{"save":true}}}}}}' >/dev/null
 
