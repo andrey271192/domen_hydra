@@ -267,8 +267,9 @@ input[type=text]:focus,input[type=password]:focus{border-color:var(--accent)}
     <button onclick="document.getElementById('wg-cfg-modal').style.display='none'" style="position:absolute;top:14px;right:16px;background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer">✕</button>
     <h2 style="font-size:15px;font-weight:700;margin-bottom:12px" id="wg-cfg-title">WireGuard конфиг</h2>
     <textarea id="wg-cfg-text" readonly style="width:100%;min-height:260px;background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:12px;font-size:11px;font-family:monospace;color:var(--text);resize:vertical;outline:none"></textarea>
-    <div style="display:flex;gap:8px;margin-top:12px">
+    <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
       <button class="btn btn-b" onclick="copyWgCfg()">📋 Копировать</button>
+      <button class="btn btn-b" onclick="downloadWgCfg()" style="background:#2563eb">⬇ Скачать .conf</button>
       <button class="btn btn-ghost" onclick="document.getElementById('wg-cfg-modal').style.display='none'">✓ Закрыть</button>
     </div>
     <div id="wg-cfg-hint" style="margin-top:10px;font-size:11px;color:var(--muted)"></div>
@@ -648,10 +649,13 @@ async function wgDeploy(name){
   } catch(e){ log.textContent += '\nОшибка: '+e; }
 }
 
+let _wgCfgFilename = 'wg0.conf';
+
 async function wgShowServerConfig(){
   try {
     const r = await fetch('/api/wireguard/server-config', {headers: authHdr()});
     const text = await r.text();
+    _wgCfgFilename = 'wg0-server.conf';
     document.getElementById('wg-cfg-title').textContent = 'wg0.conf — конфиг VPS сервера';
     document.getElementById('wg-cfg-text').value = text;
     document.getElementById('wg-cfg-hint').textContent = 'Этот файл лежит на VPS в /etc/wireguard/wg0.conf';
@@ -663,9 +667,10 @@ async function wgShowRouterConfig(name){
   try {
     const r = await fetch(`/api/routers/${encodeURIComponent(name)}/wireguard-config`, {headers: authHdr()});
     const text = await r.text();
+    _wgCfgFilename = `hydravpn-${name}.conf`;
     document.getElementById('wg-cfg-title').textContent = `wg0.conf — конфиг роутера «${name}»`;
     document.getElementById('wg-cfg-text').value = text;
-    document.getElementById('wg-cfg-hint').textContent = 'Можно вручную добавить в Keenetic: Интернет → WireGuard → Добавить подключение → Вставить из буфера';
+    document.getElementById('wg-cfg-hint').textContent = 'Keenetic: Интернет → WireGuard → Загрузить из файла';
     document.getElementById('wg-cfg-modal').style.display = 'flex';
   } catch(e){ alert('Ошибка: '+e); }
 }
@@ -674,6 +679,16 @@ function copyWgCfg(){
   const t = document.getElementById('wg-cfg-text').value;
   if(navigator.clipboard){ navigator.clipboard.writeText(t); }
   else { document.getElementById('wg-cfg-text').select(); document.execCommand('copy'); }
+}
+
+function downloadWgCfg(){
+  const text = document.getElementById('wg-cfg-text').value;
+  const blob = new Blob([text], {type: 'text/plain'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = _wgCfgFilename;
+  a.click();
+  URL.revokeObjectURL(a.href);
 }
 
 // ── SETTINGS ──────────────────────────────────────────────────────────────
