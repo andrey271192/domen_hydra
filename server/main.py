@@ -381,7 +381,7 @@ async def tunnel_cmd(name: str, x_admin_password: str = Header("")):
             port += 1
         rcfg["tunnel_port"] = port
 
-    # Keypair (один раз на роутер)
+    # Keypair — генерируем один раз, но authorized_keys обновляем всегда
     if not rcfg.get("tunnel_priv_key") or not rcfg.get("tunnel_pub_key"):
         try:
             priv, pub = await asyncio.to_thread(_gen_ed25519_keypair, name)
@@ -391,7 +391,8 @@ async def tunnel_cmd(name: str, x_admin_password: str = Header("")):
             raise HTTPException(500, f"ssh-keygen упал: {e}") from e
         rcfg["tunnel_priv_key"] = priv
         rcfg["tunnel_pub_key"] = pub
-        await asyncio.to_thread(_add_pubkey_to_authorized_keys, name, pub)
+    # Всегда синхронизируем authorized_keys (защита от ручного удаления)
+    await asyncio.to_thread(_add_pubkey_to_authorized_keys, name, rcfg["tunnel_pub_key"])
 
     # Одноразовый токен (10 мин)
     reg_token = secrets.token_urlsafe(32)
