@@ -710,49 +710,85 @@ async def wg_deploy(name: str, x_admin_password: str = Header("")):
     client_ip = peer["ip"]
 
     script = f"""\
-set -e
 echo '[1/3] Установка wireguard-tools...'
 opkg update 2>/dev/null || true
-opkg install wireguard-tools kmod-wireguard 2>/dev/null || true
-command -v wg >/dev/null 2>&1 || {{ echo 'ОШИБКА: wg не установлен'; exit 1; }}
+opkg install wireguard-tools 2>/dev/null || true
+command -v wg >/dev/null 2>&1 || {{ echo 'ОШИБКА: wg не установлен (opkg install wireguard-tools)'; exit 1; }}
 
 echo '[2/3] Запись конфига...'
 mkdir -p /opt/etc/wireguard
 cat > /opt/etc/wireguard/wg0.conf << 'WGEOF'
 {wg_conf}WGEOF
 chmod 600 /opt/etc/wireguard/wg0.conf
+printf '%s\\n' '{priv_key}' > /opt/etc/wireguard/wg0.key
+chmod 600 /opt/etc/wireguard/wg0.key
+
 cat > /opt/etc/init.d/S50wg0 << 'INITEOF'
 #!/bin/sh
 case "$1" in
-  start)   wg-quick up /opt/etc/wireguard/wg0.conf 2>/dev/null ;;
-  stop)    wg-quick down /opt/etc/wireguard/wg0.conf 2>/dev/null ;;
-  restart) wg-quick down /opt/etc/wireguard/wg0.conf 2>/dev/null; wg-quick up /opt/etc/wireguard/wg0.conf ;;
+  start)
+    ip link show wg0 >/dev/null 2>&1 || ip link add wg0 type wireguard 2>/dev/null || exit 0
+    wg set wg0 private-key /opt/etc/wireguard/wg0.key \\
+      peer '{pub_key}' \\
+      allowed-ips 0.0.0.0/0 \\
+      endpoint '{vps_host}:{port}' \\
+      persistent-keepalive 25
+    ip addr add '{client_ip}/32' dev wg0 2>/dev/null || true
+    ip link set up dev wg0
+    ;;
+  stop)
+    ip link set down dev wg0 2>/dev/null
+    ip link delete wg0 2>/dev/null
+    ;;
+  restart) $0 stop; sleep 1; $0 start ;;
 esac
 INITEOF
 chmod +x /opt/etc/init.d/S50wg0
 
-echo '[3/3] Запуск VPN...'
-wg-quick down /opt/etc/wireguard/wg0.conf 2>/dev/null || true
-wg-quick up /opt/etc/wireguard/wg0.conf
+echo '[3/3] Настройка WireGuard...'
+DONE=0
 
+# Вариант 1: Keenetic CLI (ndmc) — нативная интеграция (появится в Подключениях)
 if command -v ndmc >/dev/null 2>&1; then
+  echo 'Keenetic CLI (ndmc)...'
   printf '%s\\n' \\
     'interface Wireguard0' \\
-    'description HydraVPN' \\
+    'ip address {client_ip}/32' \\
     'wireguard private-key {priv_key}' \\
     'wireguard peer {pub_key}' \\
     'wireguard allowed-ips 0.0.0.0 0.0.0.0' \\
     'wireguard endpoint {vps_host} {port}' \\
     'wireguard persistent-keepalive 25' \\
     'exit' \\
-    'system configuration save' | ndmc 2>/dev/null && \\
-    echo 'Keenetic CLI: нативная интеграция OK (проверь в Подключениях)' || \\
-    echo 'Keenetic CLI: не удалось, wg-quick запущен'
+    'exit' \\
+    'system configuration save' | ndmc 2>&1 && DONE=1 && \\
+    echo 'OK: Keenetic WireGuard нативно (проверь в Подключениях)' || true
+fi
+
+# Вариант 2: raw wg + ip (Entware, без wg-quick)
+if [ "$DONE" = "0" ]; then
+  echo 'Используем wg + ip...'
+  ip link show wg0 >/dev/null 2>&1 || ip link add wg0 type wireguard 2>/dev/null || true
+  wg set wg0 private-key /opt/etc/wireguard/wg0.key \\
+    peer '{pub_key}' \\
+    allowed-ips 0.0.0.0/0 \\
+    endpoint '{vps_host}:{port}' \\
+    persistent-keepalive 25 && DONE=1 || true
+  ip addr add '{client_ip}/32' dev wg0 2>/dev/null || true
+  ip link set up dev wg0 2>/dev/null || true
+  [ "$DONE" = "1" ] && echo 'OK: wg0 поднят'
+fi
+
+if [ "$DONE" = "0" ]; then
+  echo 'ОШИБКА: не удалось настроить WireGuard'
+  echo 'Конфиг сохранён: /opt/etc/wireguard/wg0.conf'
+  echo 'После перезагрузки S50wg0 попробует снова'
+  exit 1
 fi
 
 echo '=== OK ==='
-echo 'VPN IP роутера: {client_ip}'
-ip addr show wg0 2>/dev/null | grep inet || wg show wg0 2>/dev/null || true
+echo 'VPN IP: {client_ip}'
+wg show wg0 2>/dev/null | head -8 || ip addr show wg0 2>/dev/null | grep inet || true
 """
 
     rc, out, err = await _ssh_on_router(rcfg, script, timeout=120)
