@@ -207,6 +207,7 @@ input[type=text]:focus,input[type=password]:focus{border-color:var(--accent)}
       <input type="text" id="r-name" placeholder="Имя (andrey)" style="width:130px">
       <input type="text" id="r-ip" placeholder="IP или hostname SSH" style="min-width:160px;flex:1;max-width:240px">
       <input type="text" id="r-user" value="root" style="width:80px">
+      <input type="text" id="r-port" placeholder="SSH порт (опц.)" inputmode="numeric" style="width:120px">
       <input type="password" id="r-pass" placeholder="SSH пароль" style="width:130px">
       <button class="btn btn-b" onclick="addRouter()">+ Добавить</button>
       <button class="btn" style="background:var(--orange);color:#000" onclick="addAndTunnel()" title="Добавить роутер без IP и сразу открыть настройку тоннеля">⇄ Тоннель</button>
@@ -430,10 +431,17 @@ async function loadRouters(){
   const R=await(await fetch('/api/routers')).json();
   const el=document.getElementById('routers-list');
   if(!Object.keys(R).length){ el.innerHTML='<span style="color:var(--muted)">Роутеры не добавлены</span>'; return; }
+  const _hostWithPort = (c) => {
+    const host=(c.ip||'').toString().trim();
+    const p=(c.ssh_port!=null && c.ssh_port!=='' && !Number.isNaN(Number(c.ssh_port))) ? Number(c.ssh_port) : null;
+    if(!host) return '';
+    if(!p) return host;
+    return `${host}:${p}`;
+  };
   el.innerHTML=Object.entries(R).map(([n,c])=>{
     const enc=encodeURIComponent(n);
     return `<div class="ri" style="align-items:flex-start;gap:10px">
-    <div style="flex:1;min-width:0"><span class="n">${_escHtml(n)}</span> <span style="font-size:12px">${c.tunnel_port?`<span style="color:var(--green)">⇄ тоннель :${c.tunnel_port}</span>`:`<span style="color:var(--muted)">— ${_escHtml(c.ip||'—')}</span>`}</span></div>
+    <div style="flex:1;min-width:0"><span class="n">${_escHtml(n)}</span> <span style="font-size:12px">${c.tunnel_port?`<span style="color:var(--green)">⇄ тоннель :${c.tunnel_port}</span>`:`<span style="color:var(--muted)">— ${_escHtml(_hostWithPort(c)||'—')}</span>`}</span></div>
     <div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end">
       <button type="button" class="btn btn-ghost" style="font-size:11px;padding:5px 10px" data-r-act="test" data-router="${enc}">🔌 Тест</button>
       <button type="button" class="btn btn-b" style="font-size:11px;padding:5px 10px" data-r-act="pull" data-router="${enc}">⬇ С роутера</button>
@@ -443,7 +451,13 @@ async function loadRouters(){
     </div></div>`;
   }).join('');
 }
-async function addRouter(){ const n=document.getElementById('r-name').value.trim(); if(!n)return; const b={ip:document.getElementById('r-ip').value.trim(),user:document.getElementById('r-user').value||'root',password:document.getElementById('r-pass').value}; try{ await fetch('/api/routers/'+encodeURIComponent(n),{method:'POST',headers:authHdr(),body:JSON.stringify(b)}); sm('rm','ok','✅ '+n); loadRouters(); }catch(e){sm('rm','err','❌ '+e)} }
+async function addRouter(){
+  const n=document.getElementById('r-name').value.trim(); if(!n)return;
+  const portRaw=(document.getElementById('r-port')?.value||'').trim();
+  const p = portRaw ? Number(portRaw) : null;
+  const ssh_port = (p && Number.isFinite(p) && p > 0) ? Math.trunc(p) : null;
+  const b={ip:document.getElementById('r-ip').value.trim(),user:document.getElementById('r-user').value||'root',ssh_port:ssh_port,password:document.getElementById('r-pass').value};
+  try{ await fetch('/api/routers/'+encodeURIComponent(n),{method:'POST',headers:authHdr(),body:JSON.stringify(b)}); sm('rm','ok','✅ '+n); loadRouters(); }catch(e){sm('rm','err','❌ '+e)} }
 async function addAndTunnel(){
   const n=document.getElementById('r-name').value.trim();
   if(!n){sm('rm','err','❌ Введи имя роутера');return;}

@@ -65,6 +65,13 @@ async def _ssh_on_router(rcfg: dict, remote_cmd: str, timeout: int = 45) -> tupl
             return 1, "", "нет IP и нет тоннеля (добавь IP или настрой тоннель)"
         ssh_host = ip
         extra_args = []
+        # Optional direct SSH port (default: 22). Tunnel uses its own port args above.
+        try:
+            p = int(rcfg.get("ssh_port") or 22)
+            if p and p != 22:
+                extra_args = ["-p", str(p)]
+        except Exception:
+            pass
     user = rcfg.get("user") or config.SSH_USER
     pwd = rcfg.get("password") or config.SSH_PASS
     try:
@@ -103,8 +110,16 @@ async def _push_one_router(server_url: str, router_key: str, rcfg: dict) -> dict
                    "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
                    "-p", str(int(tunnel_port)), f"{user}@127.0.0.1", cmd]
     else:
+        port_args: list[str] = []
+        try:
+            p = int(rcfg.get("ssh_port") or 22)
+            if p and p != 22:
+                port_args = ["-p", str(p)]
+        except Exception:
+            port_args = []
         ssh_cmd = ["sshpass", "-p", pwd, "ssh",
                    "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
+                   *port_args,
                    f"{user}@{ip}", cmd]
     try:
         r = await asyncio.to_thread(subprocess.run, ssh_cmd, capture_output=True, text=True, timeout=60)
