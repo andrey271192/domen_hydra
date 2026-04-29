@@ -74,12 +74,18 @@ async def _ssh_on_router(rcfg: dict, remote_cmd: str, timeout: int = 45) -> tupl
             pass
     user = rcfg.get("user") or config.SSH_USER
     pwd = rcfg.get("password") or config.SSH_PASS
+    ssh_opts = [
+        "-o", "StrictHostKeyChecking=no",
+        "-o", "UserKnownHostsFile=/dev/null",
+        "-o", "GlobalKnownHostsFile=/dev/null",
+        "-o", "LogLevel=ERROR",
+    ]
     try:
         r = await asyncio.to_thread(
             subprocess.run,
             [
                 "sshpass", "-p", pwd,
-                "ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=12",
+                "ssh", *ssh_opts, "-o", "ConnectTimeout=12",
                 *extra_args,
                 f"{user}@{ssh_host}", remote_cmd,
             ],
@@ -100,6 +106,12 @@ async def _push_one_router(server_url: str, router_key: str, rcfg: dict) -> dict
         return {"router": router_key, "ok": False, "msg": "нет IP и нет тоннеля"}
     user = rcfg.get("user") or config.SSH_USER
     pwd = rcfg.get("password") or config.SSH_PASS
+    ssh_opts = [
+        "-o", "StrictHostKeyChecking=no",
+        "-o", "UserKnownHostsFile=/dev/null",
+        "-o", "GlobalKnownHostsFile=/dev/null",
+        "-o", "LogLevel=ERROR",
+    ]
     cmd = (
         f"curl -sf '{server_url}/hydra/domain.conf' -o /opt/etc/HydraRoute/domain.conf && "
         f"curl -sf '{server_url}/hydra/ip.list' -o /opt/etc/HydraRoute/ip.list && "
@@ -107,7 +119,7 @@ async def _push_one_router(server_url: str, router_key: str, rcfg: dict) -> dict
     )
     if tunnel_port:
         ssh_cmd = ["sshpass", "-p", pwd, "ssh",
-                   "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
+                   *ssh_opts, "-o", "ConnectTimeout=10",
                    "-p", str(int(tunnel_port)), f"{user}@127.0.0.1", cmd]
     else:
         port_args: list[str] = []
@@ -118,7 +130,7 @@ async def _push_one_router(server_url: str, router_key: str, rcfg: dict) -> dict
         except Exception:
             port_args = []
         ssh_cmd = ["sshpass", "-p", pwd, "ssh",
-                   "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
+                   *ssh_opts, "-o", "ConnectTimeout=10",
                    *port_args,
                    f"{user}@{ip}", cmd]
     try:
