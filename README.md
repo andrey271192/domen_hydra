@@ -1,6 +1,8 @@
 # HydraRoute Manager
 
-Веб-панель для управления **HydraRoute Neo** на роутерах Keenetic. Редактируешь списки доменов и IP в браузере — одной кнопкой всё разъезжается по роутерам. Плюс встроенный WireGuard-генератор и мастер обратного туннеля для роутеров без белого IP.
+Панель для **HydraRoute Neo**: домены и IP правишь в браузере на VPS, одной кнопкой — на все роутеры. Есть генератор WireGuard и мастер обратного туннеля, если у провайдера серый IP.
+
+> Полный дашборд с мониторингом и Telegram — [keenetic-unified](https://github.com/andrey271192/keenetic-unified). Этот репозиторий — узкая задача «только Hydra и списки».
 
 > **Поддержать проект:** [Boosty](https://boosty.to/andrey27/donate) · [Ozon СБП](https://finance.ozon.ru/apps/sbp/ozonbankpay/019dc200-2a5d-7931-a619-782d285f6798) · Telegram: [@Iot_andrey](https://t.me/Iot_andrey)
 
