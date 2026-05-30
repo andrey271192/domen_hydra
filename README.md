@@ -4,7 +4,7 @@
 
 > Полный дашборд с мониторингом и Telegram — [keenetic-unified](https://github.com/andrey271192/keenetic-unified). Этот репозиторий — узкая задача «только Hydra и списки».
 
-> **Поддержать проект:** [Boosty](https://boosty.to/andrey27/donate) · [Ozon СБП](https://finance.ozon.ru/apps/sbp/ozonbankpay/019dc200-2a5d-7931-a619-782d285f6798) · Telegram: [@Iot_andrey](https://t.me/Iot_andrey)
+> **Поддержать проект:** [Boosty](https://boosty.to/andrey27/donate) · [Ozon СБП](https://finance.ozon.ru/apps/sbp/ozonbankpay/019dc200-2a5d-7931-a619-782d285f6798) · Telegram: [@PCAdministration](https://t.me/PCAdministration)
 
 ![Превью веб-интерфейса](docs/preview.png)
 
@@ -578,4 +578,4 @@ ss -tlnp | grep 2010
 
 - [Boosty](https://boosty.to/andrey27/donate)
 - [Ozon СБП](https://finance.ozon.ru/apps/sbp/ozonbankpay/019dc200-2a5d-7931-a619-782d285f6798)
-- Telegram: [@Iot_andrey](https://t.me/Iot_andrey) — вопросы, идеи, обратная связь
+- Telegram: [@PCAdministration](https://t.me/PCAdministration) — вопросы, идеи, обратная связь
